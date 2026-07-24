@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Party Jukebox</title>
+  <link rel="stylesheet" href="/static/css/jukebox.css">
+  <meta name="theme-color" content="#1a0c08">
+</head>
+<body>
+
+<!-- Toast container -->
+<div id="toast-container" class="toast-container"></div>
+
+<div class="container">
+
+  <!-- Header -->
+  <header class="jukebox-header">
+    <h1>🎵 JUKEBOX</h1>
+    <div class="tagline">Make Your Selection</div>
+    <div id="nickname-display" class="nickname-badge" style="margin-top:8px"></div>
+  </header>
+
+  <!-- Spotify warning -->
+  <div id="spotify-warning" class="card hidden" style="border-color:var(--warning);text-align:center">
+    <span style="color:var(--warning);font-size:0.85rem">⚠ Spotify not connected — host needs to authorize at <a href="/host" style="color:var(--accent)">/host</a></span>
+  </div>
+
+  <!-- Ban banner (shown only if user is banned) -->
+  <div id="ban-banner" class="ban-banner hidden">
+    <h2>🚫 SILENCED!</h2>
+    <p>You've been SILENCED, <strong id="ban-nickname"></strong>!<br>Your terrible taste has been noted.</p>
+    <p style="margin-top:8px;font-size:0.78rem;color:var(--warning)">You are no longer allowed to queue songs.</p>
+  </div>
+
+  <!-- Main content (hidden when banned) -->
+  <div id="main-content">
+
+    <!-- Now Playing -->
+    <div class="card now-playing-card">
+      <div class="now-playing-label">▶ NOW PLAYING</div>
+
+      <div id="no-track-msg" style="text-align:center;color:var(--text-dim);padding:20px 0;font-size:0.85rem">
+        Nothing playing yet... queue a song!
+      </div>
+
+      <div id="now-playing-section" class="hidden">
+        <div class="now-playing-inner">
+          <!-- Vinyl + album art -->
+          <div class="vinyl-wrap">
+            <svg id="vinyl-svg" class="vinyl" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+              <!-- Vinyl record body -->
+              <circle cx="50" cy="50" r="48" fill="#111" stroke="#333" stroke-width="1"/>
+              <!-- Grooves -->
+              <circle cx="50" cy="50" r="44" fill="none" stroke="#1e1e1e" stroke-width="1"/>
+              <circle cx="50" cy="50" r="40" fill="none" stroke="#1e1e1e" stroke-width="1"/>
+              <circle cx="50" cy="50" r="36" fill="none" stroke="#1e1e1e" stroke-width="1"/>
+              <circle cx="50" cy="50" r="32" fill="none" stroke="#1e1e1e" stroke-width="1"/>
+              <circle cx="50" cy="50" r="28" fill="none" stroke="#1e1e1e" stroke-width="1"/>
+              <!-- Label center -->
+              <circle cx="50" cy="50" r="14" fill="#4a2000"/>
+              <circle cx="50" cy="50" r="14" fill="none" stroke="rgba(212,175,55,0.5)" stroke-width="1"/>
+              <!-- Highlight -->
+              <circle cx="50" cy="50" r="3" fill="rgba(212,175,55,0.8)"/>
+              <!-- Gold shimmer on rim -->
+              <circle cx="50" cy="50" r="48" fill="none" stroke="rgba(212,175,55,0.15)" stroke-width="2"/>
+            </svg>
+            <img id="album-art-img" class="album-art-small hidden" src="" alt="Album art">
+          </div>
+
+          <!-- Track info -->
+          <div class="track-info">
+            <div id="track-name" class="track-name">---</div>
+            <div id="track-artist" class="track-artist">---</div>
+            <div class="progress-bar-wrap mt-8">
+              <div id="progress-fill" class="progress-bar-fill" style="width:0%"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Downvote -->
+        <button id="downvote-btn" class="btn downvote-btn">
+          👎 <span id="downvote-label">SKIP THIS! (0/7)</span>
+        </button>
+        <div class="vote-meter">
+          <span style="color:var(--warning);font-size:0.75rem">SKIP VOTES:</span>
+          <div id="vote-pips" class="vote-pips"></div>
+        </div>
+      </div>
+
+      <!-- Reaction buttons -->
+      <div id="reaction-row" class="reaction-row mt-12">
+        <button id="fire-btn" class="reaction-btn">
+          🔥 <span id="fire-count" class="reaction-count">0</span>
+        </button>
+        <button id="heart-btn" class="reaction-btn">
+          ❤️ <span id="heart-count" class="reaction-count">0</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Search -->
+    <div class="card card-cyan">
+      <div class="section-header">
+        <h2>SEARCH</h2>
+        <div class="line"></div>
+      </div>
+      <div id="search-wrap" class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input
+          id="search-input"
+          class="search-input"
+          type="text"
+          placeholder="Search for a song or artist..."
+          autocomplete="off"
+          autocorrect="off"
+          spellcheck="false"
+        >
+        <div id="search-results" class="search-results"></div>
+      </div>
+    </div>
+
+    <!-- Up Next queue -->
+    <div class="card">
+      <div class="section-header">
+        <h2>UP NEXT</h2>
+        <div class="line"></div>
+      </div>
+      <div id="queue-list" class="queue-list"></div>
+    </div>
+
+    <!-- Hall of Shame -->
+    <div id="hall-of-shame" class="card hidden" style="border-color:var(--warning)">
+      <div class="section-header">
+        <h2 style="color:var(--warning);text-shadow:var(--glow-red)">HALL OF SHAME</h2>
+        <div class="line" style="background:linear-gradient(90deg,rgba(255,68,68,0.3),transparent)"></div>
+      </div>
+      <p style="font-size:0.78rem;color:var(--text-dim);margin-bottom:8px">
+        These guests have had their songs voted off the dance floor twice. They've been SILENCED.
+      </p>
+      <div id="banned-list" class="banned-list"></div>
+    </div>
+
+    <!-- Footer -->
+    <div style="text-align:center;padding:16px 0;color:var(--text-dim);font-size:0.72rem">
+      <a href="/tv" target="_blank" style="color:var(--text-dim)">TV Mode</a>
+      &nbsp;·&nbsp;
+      <a href="/host" target="_blank" style="color:var(--text-dim)">Host Panel</a>
+    </div>
+
+  </div><!-- end #main-content -->
+</div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jukebox Host Panel</title>
+  <link rel="stylesheet" href="/static/css/jukebox.css">
+</head>
+<body>
+
+<div id="toast-container" class="toast-container"></div>
+
+<!-- ── Login View ── -->
+<div id="login-view" class="host-login-wrap">
+  <div class="host-login-box card">
+    <h1>HOST LOGIN</h1>
+    <p style="color:var(--text-dim);font-size:0.82rem;margin-bottom:20px">Enter your host password to access the control panel</p>
+    <form id="login-form">
+      <input
+        id="login-password"
+        type="password"
+        class="input-field"
+        placeholder="Host password..."
+        autocomplete="current-password"
+        required
+      >
+      <div id="login-error" class="hidden" style="color:var(--warning);font-size:0.82rem;margin-bottom:10px"></div>
+      <button type="submit" class="btn btn-primary w-full">ENTER THE BOOTH</button>
+    </form>
+    <p style="margin-top:16px;font-size:0.72rem;color:var(--text-dim)">
+      Guest UI: <a href="/" style="color:var(--accent)">/</a> &nbsp;·&nbsp;
+      TV Mode: <a href="/tv" style="color:var(--accent)">/tv</a>
+    </p>
+  </div>
+</div>
+
+<!-- ── Panel View (hidden until login) ── -->
+<div id="panel-view" class="hidden">
+
+  <!-- Header -->
+  <div style="background:var(--bg-card);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;justify-content:space-between">
+    <h1 style="font-family:'Playfair Display SC',serif;font-size:1.6rem;color:var(--primary);letter-spacing:3px">🎛 HOST PANEL</h1>
+    <div style="display:flex;gap:10px;align-items:center">
+      <span style="color:var(--text-dim);font-size:0.78rem">Spotify: <span id="spotify-status">checking...</span></span>
+      <a id="spotify-connect-btn" href="/auth/spotify" class="btn btn-primary btn-sm hidden">CONNECT SPOTIFY</a>
+      <button onclick="fetch('/api/host/logout',{method:'POST'}).then(()=>location.reload())" class="btn btn-ghost btn-sm">LOGOUT</button>
+    </div>
+  </div>
+
+  <div class="host-layout">
+
+    <!-- ── Sidebar ── -->
+    <div class="host-sidebar">
+
+      <!-- Now Playing card -->
+      <div class="card">
+        <div class="section-header">
+          <h2>NOW PLAYING</h2>
+          <div class="line"></div>
+        </div>
+        <div id="now-playing-info" style="color:var(--text-dim);font-size:0.82rem">Loading...</div>
+        <div class="mt-12" style="display:flex;gap:8px;flex-wrap:wrap">
+          <button id="skip-btn" class="btn btn-danger btn-sm">⏭ FORCE SKIP</button>
+          <button id="clear-queue-btn" class="btn btn-ghost btn-sm">🗑 CLEAR QUEUE</button>
+        </div>
+      </div>
+
+      <!-- Queue management -->
+      <div class="card">
+        <div class="section-header">
+          <h2>MANAGE QUEUE</h2>
+          <div class="line"></div>
+        </div>
+        <div id="queue-manage-list">
+          <div style="color:var(--text-dim);font-size:0.82rem;font-style:italic">Queue is empty</div>
+        </div>
+      </div>
+
+      <!-- QR Code -->
+      <div class="card text-center">
+        <div class="section-header">
+          <h2>QR CODE</h2>
+          <div class="line"></div>
+        </div>
+        <p style="color:var(--text-dim);font-size:0.75rem;margin-bottom:10px">Guests scan this to join the party</p>
+        <img id="qr-img" src="/qr" alt="QR Code"
+          style="width:160px;height:160px;border:3px solid var(--primary);border-radius:8px;box-shadow:var(--glow-pink)">
+        <div id="party-url-display" style="margin-top:8px;font-size:0.72rem;color:var(--accent)"></div>
+      </div>
+
+    </div><!-- end sidebar -->
+
+    <!-- ── Main content ── -->
+    <div class="host-main">
+
+      <!-- Demo Mode -->
+      <div class="card" style="border-color:rgba(212,175,55,0.6)">
+        <div class="section-header">
+          <h2>DEMO MODE</h2>
+          <div class="line"></div>
+        </div>
+        <p style="color:var(--text-dim);font-size:0.82rem;margin-bottom:14px">
+          Simulate a now-playing track and queue songs without Spotify — great for previewing the UI before the party.
+        </p>
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;flex-wrap:wrap">
+          <label class="toggle-label">
+            <input type="checkbox" id="demo-toggle">
+            <span class="toggle-switch"></span>
+            Demo Mode
+          </label>
+          <span id="demo-status" style="font-family:'Playfair Display SC',serif;font-size:0.75rem;letter-spacing:1px;color:var(--text-muted)">OFF</span>
+        </div>
+        <div id="demo-track-form">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+            <input id="demo-track-name" type="text" class="input-field" placeholder="Track name..." style="margin-bottom:0">
+            <input id="demo-artist" type="text" class="input-field" placeholder="Artist..." style="margin-bottom:0">
+          </div>
+          <input id="demo-album-art" type="text" class="input-field" placeholder="Album art URL (optional — leave blank for vinyl only)">
+          <button id="set-demo-track-btn" class="btn btn-primary">SET NOW PLAYING</button>
+        </div>
+      </div>
+
+      <!-- Host Queue a Song -->
+      <div class="card card-cyan">
+        <div class="section-header">
+          <h2>QUEUE A SONG</h2>
+          <div class="line"></div>
+        </div>
+        <p style="color:var(--text-dim);font-size:0.82rem;margin-bottom:12px">
+          Search Spotify to queue a song as the host. In demo mode, use manual entry below.
+        </p>
+
+        <!-- Spotify search -->
+        <div id="host-search-section">
+          <div class="search-wrap" style="margin-bottom:10px">
+            <span class="search-icon">🔍</span>
+            <input id="host-search-input" class="search-input" type="text"
+              placeholder="Search Spotify..." autocomplete="off" spellcheck="false">
+            <div id="host-search-results" class="search-results"></div>
+          </div>
+        </div>
+
+        <!-- Manual entry (always available) -->
+        <details id="host-manual-section" style="margin-top:8px">
+          <summary style="cursor:pointer;color:var(--text-dim);font-size:0.8rem;font-family:'Playfair Display SC',serif;letter-spacing:1px;margin-bottom:10px">
+            ▸ ADD MANUALLY (demo / no Spotify)
+          </summary>
+          <div style="margin-top:10px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+              <input id="host-manual-name" type="text" class="input-field" placeholder="Track name..." style="margin-bottom:0">
+              <input id="host-manual-artist" type="text" class="input-field" placeholder="Artist..." style="margin-bottom:0">
+            </div>
+            <button id="host-manual-add-btn" class="btn btn-primary">ADD TO QUEUE</button>
+          </div>
+        </details>
+      </div>
+
+      <!-- Settings -->
+      <div class="card card-cyan">
+        <div class="section-header">
+          <h2>SETTINGS</h2>
+          <div class="line"></div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+
+          <!-- Downvote threshold -->
+          <div>
+            <label style="font-size:0.78rem;color:var(--text-dim);display:block;margin-bottom:6px">
+              DOWNVOTE THRESHOLD: <span id="threshold-val" style="color:var(--primary)">7</span>
+            </label>
+            <input type="range" id="threshold-slider" min="1" max="20" value="7">
+          </div>
+
+          <!-- Max queue per user -->
+          <div>
+            <label style="font-size:0.78rem;color:var(--text-dim);display:block;margin-bottom:6px">
+              MAX SONGS PER GUEST: <span id="max-queue-val" style="color:var(--primary)">2</span>
+            </label>
+            <input type="range" id="max-queue-slider" min="1" max="10" value="2">
+          </div>
+
+          <!-- Skip ban threshold -->
+          <div>
+            <label style="font-size:0.78rem;color:var(--text-dim);display:block;margin-bottom:6px">
+              SKIPS BEFORE BAN: <span id="ban-threshold-val" style="color:var(--primary)">2</span>
+            </label>
+            <input type="range" id="ban-threshold-slider" min="1" max="10" value="2">
+          </div>
+
+          <!-- New password -->
+          <div>
+            <label style="font-size:0.78rem;color:var(--text-dim);display:block;margin-bottom:6px">
+              NEW HOST PASSWORD
+            </label>
+            <input id="new-password" type="password" class="input-field" placeholder="Leave blank to keep current" style="margin-bottom:0">
+          </div>
+
+          <!-- Party URL -->
+          <div style="grid-column:1/-1">
+            <label style="font-size:0.78rem;color:var(--text-dim);display:block;margin-bottom:6px">
+              PARTY URL (for QR code)
+            </label>
+            <input id="party-url-input" type="text" class="input-field" placeholder="http://192.168.1.X:5000" style="margin-bottom:0">
+          </div>
+
+        </div>
+
+        <button id="save-settings-btn" class="btn btn-primary mt-12">SAVE SETTINGS</button>
+      </div>
+
+      <!-- Users table -->
+      <div class="card">
+        <div class="section-header">
+          <h2>GUESTS</h2>
+          <div class="line"></div>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="user-table">
+            <thead>
+              <tr>
+                <th>NICKNAME</th>
+                <th>QUEUED</th>
+                <th>SKIPS</th>
+                <th>STATUS</th>
+                <th>FIRST SEEN</th>
+                <th>ACTION</th>
+              </tr>
+            </thead>
+            <tbody id="users-tbody">
+              <tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:20px">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- end main -->
+  </div><!-- end host-layout -->
+</div><!-- end panel-view -->
+
+<script src="/static/js/host.js"></script>
+</body>
+</html>

@@ -1,0 +1,480 @@
+import sqlite3
+import threading
+import os
+
+DB_PATH = os.path.join(os.path.dirname(__file__), 'jukebox.db')
+_db_lock = threading.Lock()
+
+
+def get_connection():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
+def _add_sort_order_column(conn):
+    """Migration: add sort_order to queue if absent, then back-fill with id."""
+    try:
+        conn.execute("ALTER TABLE queue ADD COLUMN sort_order INTEGER")
+    except Exception:
+        pass
+    conn.execute("UPDATE queue SET sort_order = id WHERE sort_order IS NULL")
+
+
+def init_db():
+    with _db_lock:
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.executescript("""
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id TEXT PRIMARY KEY,
+                    nickname TEXT NOT NULL,
+                    songs_skipped_count INTEGER DEFAULT 0,
+                    is_banned INTEGER DEFAULT 0,
+                    first_seen TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS queue (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    spotify_track_id TEXT NOT NULL,
+                    track_name TEXT NOT NULL,
+                    artist TEXT NOT NULL,
+                    album_art TEXT,
+                    duration_ms INTEGER,
+                    requested_by TEXT NOT NULL,
+                    status TEXT DEFAULT 'pending',
+                    added_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (requested_by) REFERENCES users(user_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS downvotes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    queue_id INTEGER NOT NULL,
+                    user_id TEXT NOT NULL,
+                    UNIQUE(queue_id, user_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS reactions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    reaction TEXT NOT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS played_tracks (
+                    spotify_track_id TEXT PRIMARY KEY,
+                    played_at TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
+            """)
+
+            _add_sort_order_column(conn)
+
+            # Insert default settings if not present
+            defaults = [
+                ('downvote_threshold', '7'),
+                ('max_queue_per_user', '2'),
+                ('skip_ban_threshold', '2'),
+                ('host_password', os.environ.get('HOST_PASSWORD', 'party2024')),
+                ('party_url', os.environ.get('PARTY_URL', 'http://localhost:5000')),
+            ]
+            for key, value in defaults:
+                cursor.execute(
+                    "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+                    (key, value)
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def get_setting(key, default=None):
+    with _db_lock:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT value FROM settings WHERE key = ?", (key,)
+            ).fetchone()
+            return row['value'] if row else default
+        finally:
+            conn.close()
+
+
+def set_setting(key, value):
+    with _db_lock:
+        conn = get_connection()
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                (key, str(value))
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def get_user(user_id):
+    with _db_lock:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT * FROM users WHERE user_id = ?", (user_id,)
+            ).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+
+def create_user(user_id, nickname):
+    with _db_lock:
+        conn = get_connection()
+        try:
+            conn.execute(
+                "INSERT OR IGNORE INTO users (user_id, nickname) VALUES (?, ?)",
+                (user_id, nickname)
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT * FROM users WHERE user_id = ?", (user_id,)
+            ).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+
+def get_banned_users():
+    with _db_lock:
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT user_id, nickname FROM users WHERE is_banned = 1"
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+
+def get_all_users():
+    with _db_lock:
+        conn = get_connection()
+        try:
+            rows = conn.execute("SELECT * FROM users ORDER BY first_seen").fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+
+def ban_user(user_id):
+    with _db_lock:
+        conn = get_connection()
+        try:
+            conn.execute(
+                "UPDATE users SET is_banned = 1 WHERE user_id = ?", (user_id,)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def unban_user(user_id):
+    with _db_lock:
+        conn = get_connection()
+        try:
+            conn.execute(
+                "UPDATE users SET is_banned = 0 WHERE user_id = ?", (user_id,)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def increment_skip_count(user_id):
+    with _db_lock:
+        conn = get_connection()
+        try:
+            conn.execute(
+                "UPDATE users SET songs_skipped_count = songs_skipped_count + 1 WHERE user_id = ?",
+                (user_id,)
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT songs_skipped_count FROM users WHERE user_id = ?", (user_id,)
+            ).fetchone()
+            return row['songs_skipped_count'] if row else 0
+        finally:
+            conn.close()
+
+
+def get_pending_queue():
+    with _db_lock:
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT q.*, u.nickname FROM queue q JOIN users u ON q.requested_by = u.user_id "
+                "WHERE q.status = 'pending' ORDER BY q.sort_order ASC, q.id ASC"
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+
+def get_playing_item():
+    with _db_lock:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT q.*, u.nickname FROM queue q JOIN users u ON q.requested_by = u.user_id "
+                "WHERE q.status = 'playing' ORDER BY q.added_at DESC LIMIT 1"
+            ).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+
+def add_to_queue(spotify_track_id, track_name, artist, album_art, duration_ms, requested_by):
+    with _db_lock:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT COALESCE(MAX(sort_order), 0) as mx FROM queue WHERE status = 'pending'"
+            ).fetchone()
+            next_order = (row['mx'] or 0) + 1
+            cursor = conn.execute(
+                "INSERT INTO queue (spotify_track_id, track_name, artist, album_art, duration_ms, requested_by, sort_order) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (spotify_track_id, track_name, artist, album_art, duration_ms, requested_by, next_order)
+            )
+            conn.commit()
+            return cursor.lastrowid
+        finally:
+            conn.close()
+
+
+def update_queue_status(queue_id, status):
+    with _db_lock:
+        conn = get_connection()
+        try:
+            conn.execute(
+                "UPDATE queue SET status = ? WHERE id = ?", (status, queue_id)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def update_queue_status_by_track(spotify_track_id, status):
+    with _db_lock:
+        conn = get_connection()
+        try:
+            conn.execute(
+                "UPDATE queue SET status = ? WHERE spotify_track_id = ? AND status = 'playing'",
+                (status, spotify_track_id)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def get_queue_item(queue_id):
+    with _db_lock:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT * FROM queue WHERE id = ?", (queue_id,)
+            ).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+
+def count_user_pending(user_id):
+    with _db_lock:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) as cnt FROM queue WHERE requested_by = ? AND status = 'pending'",
+                (user_id,)
+            ).fetchone()
+            return row['cnt'] if row else 0
+        finally:
+            conn.close()
+
+
+def track_played_tonight(spotify_track_id):
+    with _db_lock:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT 1 FROM played_tracks WHERE spotify_track_id = ?",
+                (spotify_track_id,)
+            ).fetchone()
+            if row:
+                return True
+            row2 = conn.execute(
+                "SELECT 1 FROM queue WHERE spotify_track_id = ? AND status IN ('pending', 'playing')",
+                (spotify_track_id,)
+            ).fetchone()
+            return row2 is not None
+        finally:
+            conn.close()
+
+
+def mark_track_played(spotify_track_id):
+    with _db_lock:
+        conn = get_connection()
+        try:
+            conn.execute(
+                "INSERT OR IGNORE INTO played_tracks (spotify_track_id) VALUES (?)",
+                (spotify_track_id,)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def add_downvote(queue_id, user_id):
+    """Returns True if downvote was added, False if already voted."""
+    with _db_lock:
+        conn = get_connection()
+        try:
+            try:
+                conn.execute(
+                    "INSERT INTO downvotes (queue_id, user_id) VALUES (?, ?)",
+                    (queue_id, user_id)
+                )
+                conn.commit()
+                return True
+            except sqlite3.IntegrityError:
+                return False
+        finally:
+            conn.close()
+
+
+def get_downvote_count(queue_id):
+    with _db_lock:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) as cnt FROM downvotes WHERE queue_id = ?",
+                (queue_id,)
+            ).fetchone()
+            return row['cnt'] if row else 0
+        finally:
+            conn.close()
+
+
+def user_has_downvoted(queue_id, user_id):
+    with _db_lock:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT 1 FROM downvotes WHERE queue_id = ? AND user_id = ?",
+                (queue_id, user_id)
+            ).fetchone()
+            return row is not None
+        finally:
+            conn.close()
+
+
+def add_reaction(user_id, reaction):
+    with _db_lock:
+        conn = get_connection()
+        try:
+            conn.execute(
+                "INSERT INTO reactions (user_id, reaction) VALUES (?, ?)",
+                (user_id, reaction)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def get_reaction_counts():
+    with _db_lock:
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT reaction, COUNT(*) as cnt FROM reactions GROUP BY reaction"
+            ).fetchall()
+            counts = {'fire': 0, 'heart': 0}
+            for r in rows:
+                counts[r['reaction']] = r['cnt']
+            return counts
+        finally:
+            conn.close()
+
+
+def clear_reactions():
+    with _db_lock:
+        conn = get_connection()
+        try:
+            conn.execute("DELETE FROM reactions")
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def clear_pending_queue():
+    with _db_lock:
+        conn = get_connection()
+        try:
+            conn.execute(
+                "UPDATE queue SET status = 'skipped' WHERE status = 'pending'"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def reorder_queue_item(queue_id, direction):
+    """Swap sort_order with the adjacent pending item. Returns True if swapped."""
+    with _db_lock:
+        conn = get_connection()
+        try:
+            item = conn.execute(
+                "SELECT id, sort_order FROM queue WHERE id = ? AND status = 'pending'",
+                (queue_id,)
+            ).fetchone()
+            if not item:
+                return False
+            cur_order = item['sort_order']
+            if direction == 'up':
+                swap = conn.execute(
+                    "SELECT id, sort_order FROM queue WHERE status = 'pending' AND sort_order < ? "
+                    "ORDER BY sort_order DESC LIMIT 1",
+                    (cur_order,)
+                ).fetchone()
+            else:
+                swap = conn.execute(
+                    "SELECT id, sort_order FROM queue WHERE status = 'pending' AND sort_order > ? "
+                    "ORDER BY sort_order ASC LIMIT 1",
+                    (cur_order,)
+                ).fetchone()
+            if not swap:
+                return False
+            conn.execute("UPDATE queue SET sort_order = ? WHERE id = ?", (swap['sort_order'], queue_id))
+            conn.execute("UPDATE queue SET sort_order = ? WHERE id = ?", (cur_order, swap['id']))
+            conn.commit()
+            return True
+        finally:
+            conn.close()
+
+
+def get_or_create_host_user():
+    """Ensure a special 'host' system user exists for host-queued songs."""
+    with _db_lock:
+        conn = get_connection()
+        try:
+            conn.execute(
+                "INSERT OR IGNORE INTO users (user_id, nickname) VALUES ('host', 'DJ Host')"
+            )
+            conn.commit()
+        finally:
+            conn.close()

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Party Jukebox — TV Display</title>
+  <link rel="stylesheet" href="/static/css/jukebox.css">
+  <style>
+    body {
+      overflow: hidden;
+      cursor: none;
+      background: var(--bg);
+    }
+    body::after {
+      content: 'CLICK FOR FULLSCREEN';
+      position: fixed;
+      bottom: 8px;
+      right: 12px;
+      font-size: 0.6rem;
+      color: rgba(255,255,255,0.15);
+      pointer-events: none;
+      letter-spacing: 2px;
+      z-index: 10000;
+    }
+  </style>
+</head>
+<body>
+
+<div class="tv-layout">
+
+  <!-- ── Left: Now Playing ── -->
+  <div class="tv-left">
+
+    <!-- Corner decoration -->
+    <div style="position:absolute;top:20px;left:24px;font-family:'Playfair Display SC',serif;font-size:1rem;color:var(--accent);letter-spacing:4px;opacity:0.6">
+      Party Jukebox
+    </div>
+
+    <!-- No track message -->
+    <div id="tv-no-track" style="text-align:center">
+      <div style="font-family:'Playfair Display',serif;font-style:italic;font-size:4rem;color:var(--accent);text-shadow:var(--glow-gold);animation:flicker 4s infinite">
+        Jukebox
+      </div>
+      <div style="color:var(--text-muted);margin-top:12px;letter-spacing:4px;font-size:0.85rem;font-family:'Playfair Display SC',serif">
+        Queue a Song to Get the Party Started
+      </div>
+    </div>
+
+    <!-- Now Playing section -->
+    <div id="tv-playing-section" class="hidden" style="display:flex;flex-direction:column;align-items:center">
+
+      <!-- Vinyl + Album art -->
+      <div class="tv-vinyl-wrap">
+        <svg id="tv-vinyl" class="tv-vinyl" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="50" cy="50" r="48" fill="#0d0d0d" stroke="#222" stroke-width="1"/>
+          <circle cx="50" cy="50" r="44" fill="none" stroke="#1a1a1a" stroke-width="1.2"/>
+          <circle cx="50" cy="50" r="40" fill="none" stroke="#1a1a1a" stroke-width="1"/>
+          <circle cx="50" cy="50" r="36" fill="none" stroke="#1a1a1a" stroke-width="1"/>
+          <circle cx="50" cy="50" r="32" fill="none" stroke="#1a1a1a" stroke-width="0.8"/>
+          <circle cx="50" cy="50" r="28" fill="none" stroke="#1a1a1a" stroke-width="0.8"/>
+          <circle cx="50" cy="50" r="14" fill="#4a2000"/>
+          <circle cx="50" cy="50" r="14" fill="none" stroke="rgba(212,175,55,0.6)" stroke-width="1.5"/>
+          <circle cx="50" cy="50" r="3.5" fill="rgba(212,175,55,0.9)"/>
+          <circle cx="50" cy="50" r="48" fill="none" stroke="rgba(212,175,55,0.2)" stroke-width="2"/>
+        </svg>
+        <img id="tv-album-art" class="tv-album-art hidden" src="" alt="Album art">
+      </div>
+
+      <!-- Track info -->
+      <div id="tv-track-name" class="tv-track-name">---</div>
+      <div id="tv-artist" class="tv-artist">---</div>
+
+      <!-- Reactions -->
+      <div class="tv-reactions">
+        <div id="tv-fire-wrap" class="tv-reaction">
+          🔥 <span id="tv-fire-count" class="tv-reaction-count">0</span>
+        </div>
+        <div id="tv-heart-wrap" class="tv-reaction">
+          ❤️ <span id="tv-heart-count" class="tv-reaction-count">0</span>
+        </div>
+      </div>
+
+    </div>
+  </div><!-- end tv-left -->
+
+  <!-- ── Right: Queue ── -->
+  <div class="tv-right">
+    <div class="tv-queue-title">COMING UP</div>
+    <div id="tv-queue-list" class="tv-queue-list"></div>
+  </div>
+
+  <!-- ── Bottom ticker ── -->
+  <div class="tv-ticker">
+    <div id="tv-ticker-inner" class="tv-ticker-inner">
+      🎵 WELCOME TO THE PARTY JUKEBOX 🎵
+    </div>
+  </div>
+
+</div><!-- end tv-layout -->
+
+<script src="/static/js/tv.js"></script>
+</body>
+</html>

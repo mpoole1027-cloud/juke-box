@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p \"C:\\\\Users\\\\mpool\\\\OneDrive\\\\Documents\\\\python\\\\Juke_Box\\\\templates\")",
+      "Bash(mkdir -p \"C:\\\\Users\\\\mpool\\\\OneDrive\\\\Documents\\\\python\\\\Juke_Box\\\\static\\\\css\")",
+      "Bash(mkdir -p \"C:\\\\Users\\\\mpool\\\\OneDrive\\\\Documents\\\\python\\\\Juke_Box\\\\static\\\\js\")",
+      "Bash(python -c ' *)",
+      "Bash(pip install *)",
+      "Bash(python -c \"import app; print\\('OK'\\)\")",
+      "Bash(Select-String \"\\\\.env\")"
+    ]
+  }
+}
