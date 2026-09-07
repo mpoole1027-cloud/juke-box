@@ -27,13 +27,30 @@ class FakeSpotify:
         self.context = None
         self.progress = 0
         self.duration = 200_000
+        self.fail = False
         self.devices = [
             {'id': 'speaker', 'name': 'Living Room', 'type': 'Speaker', 'is_active': False},
             {'id': 'phone', 'name': 'iPhone', 'type': 'Smartphone', 'is_active': False},
         ]
         self._lock = threading.Lock()
 
+    # Mirrors the real module's constants so queue_manager can read them
+    # off the fake exactly as it reads them off spotify_client.
+    PLAYBACK_OK = 'ok'
+    PLAYBACK_IDLE = 'idle'
+    PLAYBACK_ERROR = 'error'
+
     # --- playback ---
+    def get_playback_state(self):
+        """Set .fail = True to simulate an unreachable Spotify / dead token."""
+        if getattr(self, 'fail', False):
+            return {'status': self.PLAYBACK_ERROR, 'playback': None,
+                    'reason': 'simulated outage'}
+        pb = self.get_current_playback()
+        if not pb or not pb.get('item'):
+            return {'status': self.PLAYBACK_IDLE, 'playback': pb}
+        return {'status': self.PLAYBACK_OK, 'playback': pb}
+
     def get_current_playback(self):
         if self.playing is None:
             return None

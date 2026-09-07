@@ -86,6 +86,41 @@ def get_current_playback():
         return None
 
 
+# Playback state, for callers that must tell "nothing is playing" apart from
+# "we couldn't find out".
+PLAYBACK_OK = 'ok'
+PLAYBACK_IDLE = 'idle'
+PLAYBACK_ERROR = 'error'
+
+
+def get_playback_state():
+    """Like get_current_playback(), but says *why* there's no track.
+
+    get_current_playback() returns None for a dead token, a network failure and
+    a genuinely idle player alike. The queue worker reads "no track" as "the
+    song ended", so a momentary Wi-Fi drop mid-song used to mark the guest's
+    song played (permanently un-requestable) and skip to the next one.
+
+    Returns {'status': PLAYBACK_OK | PLAYBACK_IDLE | PLAYBACK_ERROR,
+             'playback': <spotify payload or None>,
+             'reason': <short string, only when status is PLAYBACK_ERROR>}
+    """
+    sp = get_spotify()
+    if not sp:
+        # No usable client: the token is missing or refresh failed. That is a
+        # failure, not an idle player.
+        return {'status': PLAYBACK_ERROR, 'playback': None, 'reason': 'not_authenticated'}
+    try:
+        playback = sp.current_playback()
+    except Exception as e:
+        logger.error(f"Error getting current playback: {e}")
+        return {'status': PLAYBACK_ERROR, 'playback': None, 'reason': str(e)}
+
+    if not playback or not playback.get('item'):
+        return {'status': PLAYBACK_IDLE, 'playback': playback}
+    return {'status': PLAYBACK_OK, 'playback': playback}
+
+
 def search_tracks(query, limit=10):
     sp = get_spotify()
     if not sp:

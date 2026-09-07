@@ -25,6 +25,8 @@ _stop_event = threading.Event()
 # pauses on the way out — standing down means leaving playback exactly as it is.
 _last_activity = time.monotonic()
 _standing_down = False
+# Tracks whether we're mid-outage, so the warning logs once, not every tick.
+_last_playback_error = False
 
 
 def note_activity():
@@ -206,7 +208,7 @@ def advance_to_next_pending():
 
 def background_worker():
     global _current_spotify_track_id, _last_playing_queue_id, _current_is_ours
-    global _standing_down
+    global _standing_down, _last_playback_error
 
     logger.info("Queue manager background thread started.")
     while not _stop_event.is_set():
@@ -229,8 +231,28 @@ def background_worker():
                 _stop_event.wait(5)
                 continue
 
+            # Fetched outside _lock: it's a network round-trip, and holding
+            # the lock across it stalls every request thread.
+            state = sc.get_playback_state()
+
+            if state['status'] == sc.PLAYBACK_ERROR:
+                # We could not find out what Spotify is doing. Say nothing,
+                # change nothing, try again next tick. Treating this as "the
+                # song ended" is what used to skip a guest's song and burn it
+                # into played_tracks on a momentary network drop.
+                if not _last_playback_error:
+                    logger.warning("Spotify state unavailable (%s) — holding position.",
+                                   state.get('reason', 'unknown'))
+                _last_playback_error = True
+                _stop_event.wait(5)
+                continue
+
+            if _last_playback_error:
+                logger.info("Spotify reachable again — resuming.")
+            _last_playback_error = False
+
             with _lock:
-                playback = sc.get_current_playback()
+                playback = state['playback']
 
                 if not playback or not playback.get('item'):
                     # Playback is idle/stopped. Only act if a track we were
