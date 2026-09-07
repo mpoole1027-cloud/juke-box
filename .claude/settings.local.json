@@ -7,7 +7,10 @@
       "Bash(python -c ' *)",
       "Bash(pip install *)",
       "Bash(python -c \"import app; print\\('OK'\\)\")",
-      "Bash(Select-String \"\\\\.env\")"
+      "Bash(Select-String \"\\\\.env\")",
+      "Bash(xargs -I{} echo {})",
+      "Bash(sqlite3 jukebox.db \"SELECT * FROM settings WHERE key='host_password';\")",
+      "Bash(sqlite3 *)"
     ]
   }
 }

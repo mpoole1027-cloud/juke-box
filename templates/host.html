@@ -39,7 +39,7 @@
 
   <!-- Header -->
   <div style="background:var(--bg-card);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;justify-content:space-between">
-    <h1 style="font-family:'Playfair Display SC',serif;font-size:1.6rem;color:var(--primary);letter-spacing:3px">🎛 HOST PANEL</h1>
+    <h1 style="font-family:'Fraunces',Georgia,serif;font-weight:600;font-size:1.3rem;color:var(--text)">🎛 Host Panel</h1>
     <div style="display:flex;gap:10px;align-items:center">
       <span style="color:var(--text-dim);font-size:0.78rem">Spotify: <span id="spotify-status">checking...</span></span>
       <a id="spotify-connect-btn" href="/auth/spotify" class="btn btn-primary btn-sm hidden">CONNECT SPOTIFY</a>
@@ -84,7 +84,7 @@
         </div>
         <p style="color:var(--text-dim);font-size:0.75rem;margin-bottom:10px">Guests scan this to join the party</p>
         <img id="qr-img" src="/qr" alt="QR Code"
-          style="width:160px;height:160px;border:3px solid var(--primary);border-radius:8px;box-shadow:var(--glow-pink)">
+          style="width:160px;height:160px;border:3px solid var(--primary);border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,0.3)">
         <div id="party-url-display" style="margin-top:8px;font-size:0.72rem;color:var(--accent)"></div>
       </div>
 
@@ -108,7 +108,7 @@
             <span class="toggle-switch"></span>
             Demo Mode
           </label>
-          <span id="demo-status" style="font-family:'Playfair Display SC',serif;font-size:0.75rem;letter-spacing:1px;color:var(--text-muted)">OFF</span>
+          <span id="demo-status" style="font-family:'Inter',sans-serif;font-size:0.75rem;letter-spacing:1px;color:var(--text-muted)">OFF</span>
         </div>
         <div id="demo-track-form">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
@@ -142,7 +142,7 @@
 
         <!-- Manual entry (always available) -->
         <details id="host-manual-section" style="margin-top:8px">
-          <summary style="cursor:pointer;color:var(--text-dim);font-size:0.8rem;font-family:'Playfair Display SC',serif;letter-spacing:1px;margin-bottom:10px">
+          <summary style="cursor:pointer;color:var(--text-dim);font-size:0.8rem;font-family:'Inter',sans-serif;letter-spacing:1px;margin-bottom:10px">
             ▸ ADD MANUALLY (demo / no Spotify)
           </summary>
           <div style="margin-top:10px">

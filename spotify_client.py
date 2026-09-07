@@ -114,6 +114,12 @@ def play_track(track_uri, device_id=None):
         return False, "Not authenticated with Spotify"
     try:
         sp.start_playback(device_id=device_id, uris=[track_uri])
+        # Best-effort: disable repeat so a finished single track stops instead
+        # of looping (otherwise the queue never advances).
+        try:
+            sp.repeat('off', device_id=device_id)
+        except Exception:
+            pass
         return True, None
     except Exception as e:
         logger.error(f"Error playing track: {e}")

@@ -175,6 +175,10 @@ function renderManageQueue(queue) {
       <div class="manage-queue-info">
         <div class="manage-queue-title">${escHtml(item.track_name)}</div>
         <div class="manage-queue-artist">${escHtml(item.artist)}</div>
+        <div style="font-size:0.68rem;color:var(--text-muted);margin-top:2px">
+          added by ${escHtml(item.nickname || '—')}${item.upvote_count > 0 ? ` · 👍 ${item.upvote_count}` : ''}
+        </div>
+        ${item.dedication ? `<div style="font-size:0.68rem;color:var(--text-dim);font-style:italic;margin-top:1px">“${escHtml(item.dedication)}”</div>` : ''}
       </div>
     </div>
   `).join('');

@@ -6,6 +6,11 @@ import spotify_client as sc
 
 logger = logging.getLogger(__name__)
 
+# A track whose progress is within this many ms of its duration is treated as
+# finished. This lets us distinguish "paused at end / ended" from "paused
+# mid-track" without relying on the overloaded is_playing flag alone.
+END_THRESHOLD_MS = 3000
+
 _lock = threading.Lock()
 _current_spotify_track_id = None
 _last_playing_queue_id = None
@@ -65,6 +70,30 @@ def _resume_playlist_if_needed():
         logger.error(f"Failed to start next song: {err}")
 
 
+def _advance_to_next_pending():
+    """Play the next pending song (marking it 'playing') or pause if the queue
+    is empty. Updates the module-level tracking globals to match. Mirrors the
+    skip/advance path. Returns the started queue item, or None."""
+    global _current_spotify_track_id, _last_playing_queue_id
+    device_id = sc.get_active_device_id()
+    pending = db.get_pending_queue()
+    if pending:
+        next_item = pending[0]
+        ok, err = sc.play_track(f"spotify:track:{next_item['spotify_track_id']}", device_id=device_id)
+        if ok:
+            db.update_queue_status(next_item['id'], 'playing')
+            _current_spotify_track_id = next_item['spotify_track_id']
+            _last_playing_queue_id = next_item['id']
+            logger.info(f"Advanced to next song: {next_item['track_name']}")
+            return next_item
+        logger.error(f"Failed to play next track: {err}")
+        return None
+    sc.pause_playback(device_id=device_id)
+    _current_spotify_track_id = None
+    _last_playing_queue_id = None
+    return None
+
+
 def background_worker():
     global _current_spotify_track_id, _last_playing_queue_id
 
@@ -74,59 +103,80 @@ def background_worker():
             with _lock:
                 playback = sc.get_current_playback()
 
-                if playback and playback.get('is_playing'):
-                    spotify_track = playback.get('item')
-                    spotify_track_id = spotify_track['id'] if spotify_track else None
+                if not playback or not playback.get('item'):
+                    # Playback is idle/stopped.
+                    if _current_spotify_track_id:
+                        # The track we were tracking ended.
+                        db.update_queue_status_by_track(_current_spotify_track_id, 'played')
+                        db.mark_track_played(_current_spotify_track_id)
+                        _current_spotify_track_id = None
+                        _last_playing_queue_id = None
+                        _resume_playlist_if_needed()
+                else:
+                    spotify_track = playback['item']
+                    spotify_track_id = spotify_track.get('id')
+                    is_playing = playback.get('is_playing', False)
+                    progress_ms = playback.get('progress_ms') or 0
+                    duration_ms = spotify_track.get('duration_ms') or 0
+                    near_end = bool(duration_ms) and progress_ms >= duration_ms - END_THRESHOLD_MS
 
-                    # Detect song change
-                    if spotify_track_id and spotify_track_id != _current_spotify_track_id:
+                    if spotify_track_id != _current_spotify_track_id:
+                        # (a) Genuine song change.
                         logger.info(f"Song changed to: {spotify_track.get('name', 'Unknown')}")
 
-                        # Mark old playing item as played
+                        # Mark the previously tracked item as played.
                         if _current_spotify_track_id:
                             db.update_queue_status_by_track(_current_spotify_track_id, 'played')
                             db.mark_track_played(_current_spotify_track_id)
-                            db.clear_reactions()
 
                         _current_spotify_track_id = spotify_track_id
 
-                        # Find the matching queue item and mark as playing
+                        # Find the matching queue item and mark it playing.
+                        matched = None
                         playing_item = db.get_playing_item()
                         if playing_item and playing_item['spotify_track_id'] == spotify_track_id:
+                            matched = playing_item
                             _last_playing_queue_id = playing_item['id']
                         else:
-                            # Try to find in queue by track id
-                            conn_rows = None
-                            import sqlite3
                             conn = db.get_connection()
                             try:
                                 row = conn.execute(
-                                    "SELECT * FROM queue WHERE spotify_track_id = ? AND status IN ('pending', 'playing') LIMIT 1",
+                                    "SELECT * FROM queue WHERE spotify_track_id = ? "
+                                    "AND status IN ('pending', 'playing') LIMIT 1",
                                     (spotify_track_id,)
                                 ).fetchone()
                                 if row:
-                                    conn_rows = dict(row)
+                                    matched = dict(row)
                             finally:
                                 conn.close()
-                            if conn_rows:
-                                db.update_queue_status(conn_rows['id'], 'playing')
-                                _last_playing_queue_id = conn_rows['id']
+                            if matched:
+                                db.update_queue_status(matched['id'], 'playing')
+                                _last_playing_queue_id = matched['id']
 
-                    # Check downvotes on current playing item
-                    playing_item = db.get_playing_item()
-                    if playing_item:
-                        _check_downvote_threshold(playing_item)
-
-                else:
-                    # Nothing playing — try to advance queue
-                    if _current_spotify_track_id:
-                        db.update_queue_status_by_track(_current_spotify_track_id, 'played')
-                        db.mark_track_played(_current_spotify_track_id)
-                        db.clear_reactions()
-                        _current_spotify_track_id = None
-                        _last_playing_queue_id = None
-
-                    _resume_playlist_if_needed()
+                        # Autoplay/radio hijack: Spotify moved on to a track that
+                        # is not one of ours while we still have songs waiting.
+                        if matched is None and db.get_pending_queue():
+                            logger.info("Autoplay/radio detected — overriding with next pending song.")
+                            _advance_to_next_pending()
+                    else:
+                        # (b) Same track still current.
+                        if is_playing:
+                            if near_end:
+                                # Track finished — advance.
+                                db.update_queue_status_by_track(_current_spotify_track_id, 'played')
+                                db.mark_track_played(_current_spotify_track_id)
+                                _advance_to_next_pending()
+                            else:
+                                playing_item = db.get_playing_item()
+                                if playing_item:
+                                    _check_downvote_threshold(playing_item)
+                        else:
+                            if near_end:
+                                # Ended / paused-at-end — advance.
+                                db.update_queue_status_by_track(_current_spotify_track_id, 'played')
+                                db.mark_track_played(_current_spotify_track_id)
+                                _advance_to_next_pending()
+                            # else: genuinely paused mid-track — do nothing.
 
         except Exception as e:
             logger.error(f"Background worker error: {e}", exc_info=True)

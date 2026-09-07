@@ -132,19 +132,99 @@ function renderQueue(queue) {
     list.innerHTML = '<div class="empty-queue">Nothing queued yet... be the first! 🎵</div>';
     return;
   }
-  list.innerHTML = queue.map((item, i) => `
+  list.innerHTML = queue.map((item, i) => {
+    const isMine = item.requested_by === USER_ID;
+    const voted = !!item.user_has_upvoted;
+    const count = item.upvote_count || 0;
+    const nickname = item.nickname || 'someone';
+    const dedication = item.dedication
+      ? `<div class="queue-dedication">“${escHtml(item.dedication)}”</div>`
+      : '';
+    return `
     <div class="queue-item">
       <div class="queue-position">${i + 1}</div>
       ${item.album_art
         ? `<img src="${escHtml(item.album_art)}" alt="art">`
-        : `<div style="width:40px;height:40px;background:var(--bg-card2);border-radius:4px;flex-shrink:0"></div>`
+        : `<div style="width:40px;height:40px;background:var(--card-alt);border-radius:4px;flex-shrink:0"></div>`
       }
       <div class="queue-item-info">
         <div class="queue-item-title">${escHtml(item.track_name)}</div>
         <div class="queue-item-artist">${escHtml(item.artist)}</div>
+        <div class="queue-requester">added by ${escHtml(nickname)}</div>
+        ${dedication}
       </div>
-    </div>
-  `).join('');
+      <div class="queue-actions">
+        <button class="queue-upvote-btn${voted ? ' voted' : ''}"
+          data-queue-id="${escHtml(item.id)}"${voted ? ' disabled' : ''}
+          title="Upvote this song" type="button">
+          👍 <span class="queue-upvote-count">${count}</span>
+        </button>
+        ${isMine
+          ? `<button class="queue-remove-btn" data-queue-id="${escHtml(item.id)}" title="Remove your song" type="button">✕</button>`
+          : ''
+        }
+      </div>
+    </div>`;
+  }).join('');
+
+  list.querySelectorAll('.queue-upvote-btn').forEach(btn => {
+    btn.addEventListener('click', () => upvoteItem(btn));
+  });
+  list.querySelectorAll('.queue-remove-btn').forEach(btn => {
+    btn.addEventListener('click', () => removeItem(btn));
+  });
+}
+
+// Upvote a queued song (Feature 3)
+async function upvoteItem(btn) {
+  const id = btn.dataset.queueId;
+  btn.disabled = true;
+  try {
+    const res = await apiFetch('/api/upvote', {
+      method: 'POST',
+      body: JSON.stringify({ queue_item_id: parseInt(id, 10) }),
+    });
+    const data = await res.json();
+    if (res.status === 409) {
+      btn.classList.add('voted');
+      return;
+    }
+    if (!res.ok || !data.success) {
+      showToast(data.error || 'Could not upvote', 'error');
+      btn.disabled = false;
+      return;
+    }
+    btn.classList.add('voted');
+    const countEl = btn.querySelector('.queue-upvote-count');
+    if (countEl && typeof data.upvote_count === 'number') {
+      countEl.textContent = data.upvote_count;
+    }
+  } catch (e) {
+    showToast('Network error', 'error');
+    btn.disabled = false;
+  }
+}
+
+// Remove your own queued song (Feature 3)
+async function removeItem(btn) {
+  const id = btn.dataset.queueId;
+  if (!confirm('Remove your song from the queue?')) return;
+  btn.disabled = true;
+  try {
+    const res = await apiFetch(`/api/queue/${id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      let msg = 'Could not remove song';
+      try { const d = await res.json(); msg = d.error || msg; } catch (e) {}
+      showToast(msg, 'error');
+      btn.disabled = false;
+      return;
+    }
+    showToast('Removed from queue', 'success');
+    pollStatus();
+  } catch (e) {
+    showToast('Network error', 'error');
+    btn.disabled = false;
+  }
 }
 
 function renderBanned(bannedUsers) {
@@ -173,11 +253,109 @@ function renderUserBanned(user) {
   }
 }
 
+// ----------------------------------------------------------------
+// Editable nickname (Feature 1)
+// ----------------------------------------------------------------
+let isEditingNickname = false;
+let currentNickname = localStorage.getItem('jukebox_nickname') || '';
+
 function renderNickname(user) {
-  if (user) {
-    $('nickname-display').textContent = '🎵 ' + user.nickname;
+  // Prefer the server value; remember it locally so optimistic renders match.
+  if (user && user.nickname) {
+    currentNickname = user.nickname;
+    localStorage.setItem('jukebox_nickname', user.nickname);
+  }
+  // Don't clobber the input while the guest is actively editing.
+  if (isEditingNickname) return;
+
+  const badge = $('nickname-display');
+  if (!badge || !currentNickname) return;
+  badge.classList.remove('nickname-editing');
+  badge.setAttribute('title', 'Tap to change your name');
+  badge.innerHTML =
+    `<span class="nickname-text">🎵 ${escHtml(currentNickname)}</span>` +
+    `<span class="nickname-edit-hint" aria-hidden="true">✎</span>`;
+
+  // One-time hint the first time the guest sees the badge.
+  if (!localStorage.getItem('jukebox_name_hint_shown')) {
+    localStorage.setItem('jukebox_name_hint_shown', '1');
+    showToast('Tip: tap your name to change it ✎');
   }
 }
+
+function startNicknameEdit() {
+  if (isEditingNickname) return;
+  isEditingNickname = true;
+  const badge = $('nickname-display');
+  badge.classList.add('nickname-editing');
+  badge.removeAttribute('title');
+  badge.innerHTML =
+    `<input id="nickname-input" class="nickname-input" type="text" maxlength="24" ` +
+    `value="${escHtml(currentNickname)}" aria-label="Your name">` +
+    `<button id="nickname-save" class="nickname-save" title="Save name" type="button">✓</button>`;
+
+  const input = $('nickname-input');
+  const save = $('nickname-save');
+  input.focus();
+  input.select();
+
+  let done = false;
+  const finishSave = () => {
+    if (done) return;
+    done = true;
+    saveNickname(input.value);
+  };
+  const cancel = () => {
+    if (done) return;
+    done = true;
+    isEditingNickname = false;
+    renderNickname(null);
+  };
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); finishSave(); }
+    else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+  });
+  input.addEventListener('blur', () => {
+    // Let a click on the save button win over blur.
+    setTimeout(() => { if (!done) finishSave(); }, 120);
+  });
+  save.addEventListener('mousedown', e => e.preventDefault());
+  save.addEventListener('click', finishSave);
+}
+
+async function saveNickname(rawValue) {
+  const value = (rawValue || '').trim().slice(0, 24);
+  isEditingNickname = false;
+  if (!value || value === currentNickname) {
+    renderNickname(null);
+    return;
+  }
+  try {
+    const res = await apiFetch('/api/user/nickname', {
+      method: 'POST',
+      body: JSON.stringify({ nickname: value }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      showToast(data.error || 'Could not update name', 'error');
+      renderNickname(null);
+      return;
+    }
+    currentNickname = data.nickname;
+    localStorage.setItem('jukebox_nickname', currentNickname);
+    renderNickname(null);
+    showToast('Name updated!', 'success');
+    requestNotifyPermission();
+  } catch (e) {
+    showToast('Network error', 'error');
+    renderNickname(null);
+  }
+}
+
+$('nickname-display').addEventListener('click', () => {
+  if (!isEditingNickname) startNicknameEdit();
+});
 
 function escHtml(str) {
   return String(str)
@@ -192,6 +370,57 @@ function escHtml(str) {
 // ----------------------------------------------------------------
 let lastFireCount = 0;
 let lastHeartCount = 0;
+
+// ----------------------------------------------------------------
+// "You're up next" / "Now playing" pings (Feature 4)
+// ----------------------------------------------------------------
+let myPendingTrackIds = new Set();   // my track_ids in the queue on the previous poll
+let firedNowPlaying = new Set();     // track_ids we already announced as playing
+let firedUpNext = new Set();         // track_ids we already announced as up-next
+
+function requestNotifyPermission() {
+  try {
+    if (typeof Notification === 'undefined') return;
+    if (Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+  } catch (e) { /* unsupported browser — ignore */ }
+}
+
+function fireNotification(body) {
+  try {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      new Notification('Party Jukebox', { body });
+    }
+  } catch (e) { /* best-effort only */ }
+}
+
+function checkMySongTransitions(data) {
+  const queue = Array.isArray(data.queue) ? data.queue : [];
+  const mine = queue.filter(it => it.requested_by === USER_ID);
+  const myIdsNow = new Set(mine.map(it => it.track_id));
+
+  // "Up next": one of my songs is now first in line and wasn't announced yet.
+  const first = queue[0];
+  if (first && first.requested_by === USER_ID && !firedUpNext.has(first.track_id)) {
+    firedUpNext.add(first.track_id);
+    showToast("🔔 You're up next!");
+    fireNotification("You're up next — get ready!");
+  }
+
+  // "Now playing": my pending song from a previous poll just became the current track.
+  const cur = data.current_track;
+  if (cur && cur.track_id && myPendingTrackIds.has(cur.track_id) && !firedNowPlaying.has(cur.track_id)) {
+    firedNowPlaying.add(cur.track_id);
+    showToast('🎉 Your song is now playing!', 'success');
+    fireNotification('🎉 Your song is now playing!');
+  }
+
+  // Reset the up-next latch once a song leaves the queue so it can fire again if re-queued.
+  firedUpNext.forEach(tid => { if (!myIdsNow.has(tid)) firedUpNext.delete(tid); });
+
+  myPendingTrackIds = myIdsNow;
+}
 
 async function pollStatus() {
   try {
@@ -212,6 +441,7 @@ async function pollStatus() {
     );
     renderQueue(data.queue);
     renderBanned(data.banned_users);
+    checkMySongTransitions(data);
 
     // Spotify not connected notice
     if (!data.spotify_connected) {
@@ -337,32 +567,63 @@ function renderSearchResults(tracks) {
     return;
   }
   results.innerHTML = tracks.map((t, i) => `
-    <div class="search-result-item" style="animation-delay:${i * 0.04}s">
-      ${t.album_art
-        ? `<img src="${escHtml(t.album_art)}" alt="art">`
-        : `<div style="width:48px;height:48px;background:var(--bg-card);border-radius:4px;flex-shrink:0"></div>`
-      }
-      <div class="search-result-info">
-        <div class="search-result-title">${escHtml(t.track_name)}</div>
-        <div class="search-result-artist">${escHtml(t.artist)}</div>
+    <div class="search-result-wrap" style="animation-delay:${i * 0.04}s">
+      <div class="search-result-item">
+        ${t.album_art
+          ? `<img src="${escHtml(t.album_art)}" alt="art">`
+          : `<div style="width:48px;height:48px;background:var(--card-alt);border-radius:4px;flex-shrink:0"></div>`
+        }
+        <div class="search-result-info">
+          <div class="search-result-title">${escHtml(t.track_name)}</div>
+          <div class="search-result-artist">${escHtml(t.artist)}</div>
+        </div>
+        <button class="btn btn-cyan btn-sm queue-it-btn"
+          data-track-id="${escHtml(t.track_id)}"
+          data-track-name="${escHtml(t.track_name)}"
+          data-artist="${escHtml(t.artist)}"
+          data-album-art="${escHtml(t.album_art || '')}"
+          data-duration="${t.duration_ms}"
+        >QUEUE IT</button>
       </div>
-      <button class="btn btn-cyan btn-sm queue-it-btn"
-        data-track-id="${escHtml(t.track_id)}"
-        data-track-name="${escHtml(t.track_name)}"
-        data-artist="${escHtml(t.artist)}"
-        data-album-art="${escHtml(t.album_art || '')}"
-        data-duration="${t.duration_ms}"
-      >QUEUE IT</button>
+      <div class="dedication-row hidden">
+        <input class="dedication-input" type="text" maxlength="80"
+          placeholder="Add a dedication (optional)…" aria-label="Dedication">
+        <button class="btn btn-cyan btn-sm dedication-confirm" type="button">ADD →</button>
+      </div>
     </div>
   `).join('');
 
   // Attach queue button listeners
   results.querySelectorAll('.queue-it-btn').forEach(btn => {
-    btn.addEventListener('click', () => queueTrack(btn));
+    btn.addEventListener('click', () => revealDedication(btn));
   });
 }
 
-async function queueTrack(btn) {
+// Reveal the optional dedication row for a result (Feature 2)
+function revealDedication(queueBtn) {
+  const wrap = queueBtn.closest('.search-result-wrap');
+  if (!wrap) { queueTrack(queueBtn, ''); return; }
+  const row = wrap.querySelector('.dedication-row');
+  const input = wrap.querySelector('.dedication-input');
+  const confirm = wrap.querySelector('.dedication-confirm');
+  if (!row || row.dataset.wired) {
+    // Already revealed — a second QUEUE IT tap just queues with whatever's typed.
+    queueTrack(queueBtn, input ? input.value : '');
+    return;
+  }
+  row.dataset.wired = '1';
+  row.classList.remove('hidden');
+  input.focus();
+  requestNotifyPermission();
+
+  const go = () => queueTrack(queueBtn, input.value);
+  confirm.addEventListener('click', go);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); go(); }
+  });
+}
+
+async function queueTrack(btn, dedication = '') {
   btn.disabled = true;
   btn.textContent = '...';
 
@@ -373,6 +634,8 @@ async function queueTrack(btn) {
     album_art: btn.dataset.albumArt,
     duration_ms: parseInt(btn.dataset.duration, 10),
   };
+  const ded = (dedication || '').trim();
+  if (ded) body.dedication = ded.slice(0, 80);
 
   try {
     const res = await apiFetch('/api/queue', {
@@ -389,6 +652,7 @@ async function queueTrack(btn) {
     showToast(`"${body.track_name}" added to queue! 🎉`, 'success');
     btn.textContent = '✓ QUEUED';
     btn.style.opacity = '0.5';
+    requestNotifyPermission();
     // Clear search
     setTimeout(() => {
       hideSearchResults();

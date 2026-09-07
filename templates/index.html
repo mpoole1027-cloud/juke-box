@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>Party Jukebox</title>
   <link rel="stylesheet" href="/static/css/jukebox.css">
-  <meta name="theme-color" content="#1a0c08">
+  <meta name="theme-color" content="#f5efe1">
 </head>
 <body>
 
@@ -16,9 +16,14 @@
 
   <!-- Header -->
   <header class="jukebox-header">
-    <h1>🎵 JUKEBOX</h1>
-    <div class="tagline">Make Your Selection</div>
-    <div id="nickname-display" class="nickname-badge" style="margin-top:8px"></div>
+    <div class="header-brand">
+      <div class="header-brand-icon">🎵</div>
+      <div>
+        <h1>Jukebox</h1>
+        <div class="tagline">Make Your Selection</div>
+      </div>
+    </div>
+    <div id="nickname-display" class="nickname-badge"></div>
   </header>
 
   <!-- Spotify warning -->
@@ -58,12 +63,12 @@
               <circle cx="50" cy="50" r="32" fill="none" stroke="#1e1e1e" stroke-width="1"/>
               <circle cx="50" cy="50" r="28" fill="none" stroke="#1e1e1e" stroke-width="1"/>
               <!-- Label center -->
-              <circle cx="50" cy="50" r="14" fill="#4a2000"/>
-              <circle cx="50" cy="50" r="14" fill="none" stroke="rgba(212,175,55,0.5)" stroke-width="1"/>
+              <circle cx="50" cy="50" r="14" fill="#c1573a"/>
+              <circle cx="50" cy="50" r="14" fill="none" stroke="rgba(107,122,63,0.5)" stroke-width="1"/>
               <!-- Highlight -->
-              <circle cx="50" cy="50" r="3" fill="rgba(212,175,55,0.8)"/>
-              <!-- Gold shimmer on rim -->
-              <circle cx="50" cy="50" r="48" fill="none" stroke="rgba(212,175,55,0.15)" stroke-width="2"/>
+              <circle cx="50" cy="50" r="3" fill="#f5efe1"/>
+              <!-- Rim -->
+              <circle cx="50" cy="50" r="48" fill="none" stroke="rgba(107,122,63,0.2)" stroke-width="2"/>
             </svg>
             <img id="album-art-img" class="album-art-small hidden" src="" alt="Album art">
           </div>
@@ -100,7 +105,7 @@
     </div>
 
     <!-- Search -->
-    <div class="card card-cyan">
+    <div class="card card-cyan search-card">
       <div class="section-header">
         <h2>SEARCH</h2>
         <div class="line"></div>
@@ -132,7 +137,7 @@
     <!-- Hall of Shame -->
     <div id="hall-of-shame" class="card hidden" style="border-color:var(--warning)">
       <div class="section-header">
-        <h2 style="color:var(--warning);text-shadow:var(--glow-red)">HALL OF SHAME</h2>
+        <h2 style="color:var(--warning)">HALL OF SHAME</h2>
         <div class="line" style="background:linear-gradient(90deg,rgba(255,68,68,0.3),transparent)"></div>
       </div>
       <p style="font-size:0.78rem;color:var(--text-dim);margin-bottom:8px">

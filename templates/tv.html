@@ -17,7 +17,7 @@
       bottom: 8px;
       right: 12px;
       font-size: 0.6rem;
-      color: rgba(255,255,255,0.15);
+      color: rgba(43,32,22,0.22);
       pointer-events: none;
       letter-spacing: 2px;
       z-index: 10000;
@@ -26,28 +26,45 @@
 </head>
 <body>
 
-<div class="tv-layout">
+<div class="tv-dash">
 
-  <!-- ── Left: Now Playing ── -->
-  <div class="tv-left">
+  <!-- ── Top: Party stats bar ── -->
+  <div class="tv-statbar">
+    <div class="tv-stat">
+      <div id="tv-stat-songs" class="tv-stat-num">0</div>
+      <div class="tv-stat-label">Songs Played</div>
+    </div>
+    <div class="tv-stat">
+      <div id="tv-stat-guests" class="tv-stat-num">0</div>
+      <div class="tv-stat-label">Guests</div>
+    </div>
+    <div class="tv-stat">
+      <div id="tv-stat-reactions" class="tv-stat-num">0</div>
+      <div class="tv-stat-label">Reactions</div>
+    </div>
+    <div class="tv-stat">
+      <div id="tv-stat-runtime" class="tv-stat-num">—</div>
+      <div class="tv-stat-label">Party Runtime</div>
+    </div>
+  </div>
+
+  <!-- ── Center-left: Now Playing ── -->
+  <div class="tv-dash-now">
 
     <!-- Corner decoration -->
-    <div style="position:absolute;top:20px;left:24px;font-family:'Playfair Display SC',serif;font-size:1rem;color:var(--accent);letter-spacing:4px;opacity:0.6">
-      Party Jukebox
-    </div>
+    <div class="tv-wordmark">Party Jukebox</div>
+
+    <!-- Live reaction feed overlay -->
+    <div id="tv-reaction-feed" class="tv-reaction-feed"></div>
 
     <!-- No track message -->
-    <div id="tv-no-track" style="text-align:center">
-      <div style="font-family:'Playfair Display',serif;font-style:italic;font-size:4rem;color:var(--accent);text-shadow:var(--glow-gold);animation:flicker 4s infinite">
-        Jukebox
-      </div>
-      <div style="color:var(--text-muted);margin-top:12px;letter-spacing:4px;font-size:0.85rem;font-family:'Playfair Display SC',serif">
-        Queue a Song to Get the Party Started
-      </div>
+    <div id="tv-no-track" class="tv-no-track">
+      <div class="tv-no-track-title">Jukebox</div>
+      <div class="tv-no-track-sub">Queue a Song to Get the Party Started</div>
     </div>
 
     <!-- Now Playing section -->
-    <div id="tv-playing-section" class="hidden" style="display:flex;flex-direction:column;align-items:center">
+    <div id="tv-playing-section" class="hidden tv-playing-section">
 
       <!-- Vinyl + Album art -->
       <div class="tv-vinyl-wrap">
@@ -58,10 +75,10 @@
           <circle cx="50" cy="50" r="36" fill="none" stroke="#1a1a1a" stroke-width="1"/>
           <circle cx="50" cy="50" r="32" fill="none" stroke="#1a1a1a" stroke-width="0.8"/>
           <circle cx="50" cy="50" r="28" fill="none" stroke="#1a1a1a" stroke-width="0.8"/>
-          <circle cx="50" cy="50" r="14" fill="#4a2000"/>
-          <circle cx="50" cy="50" r="14" fill="none" stroke="rgba(212,175,55,0.6)" stroke-width="1.5"/>
-          <circle cx="50" cy="50" r="3.5" fill="rgba(212,175,55,0.9)"/>
-          <circle cx="50" cy="50" r="48" fill="none" stroke="rgba(212,175,55,0.2)" stroke-width="2"/>
+          <circle cx="50" cy="50" r="14" fill="#c1573a"/>
+          <circle cx="50" cy="50" r="14" fill="none" stroke="rgba(107,122,63,0.6)" stroke-width="1.5"/>
+          <circle cx="50" cy="50" r="3.5" fill="#f5efe1"/>
+          <circle cx="50" cy="50" r="48" fill="none" stroke="rgba(107,122,63,0.25)" stroke-width="2"/>
         </svg>
         <img id="tv-album-art" class="tv-album-art hidden" src="" alt="Album art">
       </div>
@@ -69,6 +86,21 @@
       <!-- Track info -->
       <div id="tv-track-name" class="tv-track-name">---</div>
       <div id="tv-artist" class="tv-artist">---</div>
+
+      <!-- Progress bar -->
+      <div id="tv-progress" class="tv-progress">
+        <div class="tv-progress-track">
+          <div id="tv-progress-fill" class="tv-progress-fill"></div>
+        </div>
+        <div class="tv-progress-times">
+          <span id="tv-elapsed" class="tv-time">0:00</span>
+          <span id="tv-total" class="tv-time">0:00</span>
+        </div>
+      </div>
+
+      <!-- Requester + dedication -->
+      <div id="tv-requester" class="tv-requester hidden"></div>
+      <div id="tv-dedication" class="tv-dedication hidden"></div>
 
       <!-- Reactions -->
       <div class="tv-reactions">
@@ -81,12 +113,28 @@
       </div>
 
     </div>
-  </div><!-- end tv-left -->
+  </div><!-- end tv-dash-now -->
 
-  <!-- ── Right: Queue ── -->
-  <div class="tv-right">
+  <!-- ── Center: Up Next queue ── -->
+  <div class="tv-dash-next">
     <div class="tv-queue-title">COMING UP</div>
     <div id="tv-queue-list" class="tv-queue-list"></div>
+  </div>
+
+  <!-- ── Right: Leaderboards ── -->
+  <div class="tv-dash-boards">
+    <div class="tv-lb">
+      <div class="tv-lb-title">🎧 Top DJs</div>
+      <div id="tv-lb-djs" class="tv-lb-list"></div>
+    </div>
+    <div class="tv-lb">
+      <div class="tv-lb-title">🔥 Crowd Favorites</div>
+      <div id="tv-lb-favorites" class="tv-lb-list"></div>
+    </div>
+    <div class="tv-lb">
+      <div class="tv-lb-title">⏭️ Most Skipped</div>
+      <div id="tv-lb-skipped" class="tv-lb-list"></div>
+    </div>
   </div>
 
   <!-- ── Bottom ticker ── -->
@@ -96,7 +144,7 @@
     </div>
   </div>
 
-</div><!-- end tv-layout -->
+</div><!-- end tv-dash -->
 
 <script src="/static/js/tv.js"></script>
 </body>
