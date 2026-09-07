@@ -1,4 +1,6 @@
 import os
+import re
+import random
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 from spotipy.cache_handler import CacheFileHandler
@@ -219,15 +221,80 @@ def clear_jukebox_playlist(playlist_id):
         logger.error(f"Error clearing playlist: {e}")
 
 
-def start_playlist_playback(playlist_id, device_id=None):
-    """Play our jukebox playlist with shuffle and repeat off."""
+PLAYLIST_ID_RE = re.compile(r'^[A-Za-z0-9]{22}$')
+
+
+def parse_playlist_id(url_or_uri):
+    """Extract a playlist id from a share link, a spotify: URI, or a bare id.
+
+    Returns the id, or None if nothing playlist-shaped is found.
+    """
+    if not url_or_uri:
+        return None
+    value = url_or_uri.strip()
+
+    # spotify:playlist:<id>
+    m = re.search(r'playlist[:/]([A-Za-z0-9]{22})', value)
+    if m:
+        return m.group(1)
+
+    # Bare id — strip any ?si=... tracking suffix first.
+    bare = value.split('?')[0].rstrip('/')
+    if PLAYLIST_ID_RE.match(bare):
+        return bare
+    return None
+
+
+def get_playlist_meta(playlist_id):
+    """Return {'id', 'name', 'track_count'} for a playlist, or None if we can't
+    read it (bad id, deleted, or not visible to this account)."""
+    sp = get_spotify()
+    if not sp:
+        return None
+    try:
+        pl = sp.playlist(playlist_id, fields='id,name,tracks.total')
+        return {
+            'id': pl['id'],
+            'name': pl.get('name') or 'Untitled playlist',
+            'track_count': (pl.get('tracks') or {}).get('total', 0),
+        }
+    except Exception as e:
+        logger.error(f"Error reading playlist {playlist_id}: {e}")
+        return None
+
+
+def start_playlist_playback(playlist_id, device_id=None, shuffle=False,
+                            random_offset=False, track_count=None):
+    """Play a playlist. Defaults match the original behaviour (shuffle and
+    repeat off, starting at track 1).
+
+    shuffle:       turn Spotify shuffle on for this context.
+    random_offset: begin on a random track. A context_uri alone always starts
+                   at track 1 even with shuffle enabled, so a party that
+                   restarts the fallback would otherwise hear the same opener
+                   every time.
+    """
     sp = get_spotify()
     if not sp:
         return False, "Not authenticated"
     try:
-        sp.start_playback(device_id=device_id, context_uri=f'spotify:playlist:{playlist_id}')
+        # Shuffle must be set before playback starts, or Spotify applies it
+        # only from the *next* track onward.
         try:
-            sp.shuffle(False, device_id=device_id)
+            sp.shuffle(bool(shuffle), device_id=device_id)
+        except Exception:
+            pass
+
+        kwargs = {'device_id': device_id, 'context_uri': f'spotify:playlist:{playlist_id}'}
+        if random_offset:
+            if track_count is None:
+                meta = get_playlist_meta(playlist_id)
+                track_count = meta['track_count'] if meta else 0
+            if track_count and track_count > 1:
+                kwargs['offset'] = {'position': random.randrange(track_count)}
+
+        sp.start_playback(**kwargs)
+        try:
             sp.repeat('off', device_id=device_id)
         except Exception:
             pass

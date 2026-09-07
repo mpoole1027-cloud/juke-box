@@ -384,15 +384,9 @@ def api_downvote():
         if skip_count >= skip_ban_threshold:
             db.ban_user(requester)
 
-        device_id = sc.get_active_device_id()
-        pending = db.get_pending_queue()
-        if pending:
-            next_item = pending[0]
-            ok, _ = sc.play_track(f"spotify:track:{next_item['spotify_track_id']}", device_id=device_id)
-            if ok:
-                db.update_queue_status(next_item['id'], 'playing')
-        else:
-            sc.pause_playback(device_id=device_id)
+        # Single source of truth: advances to the next song, or falls back to
+        # the host's playlist when the queue is empty.
+        qm.advance_to_next_pending()
 
     return jsonify({'success': True, 'downvote_count': count, 'threshold': threshold})
 
@@ -524,18 +518,8 @@ def api_host_skip():
         db.update_queue_status(playing_item['id'], 'skipped')
         db.mark_track_played(playing_item['spotify_track_id'])
 
-    device_id = sc.get_active_device_id()
-    pending = db.get_pending_queue()
-    if pending:
-        next_item = pending[0]
-        ok, err = sc.play_track(f"spotify:track:{next_item['spotify_track_id']}", device_id=device_id)
-        if ok:
-            db.update_queue_status(next_item['id'], 'playing')
-            return jsonify({'success': True})
-        return jsonify({'error': err or 'Failed to play next song'}), 500
-    else:
-        sc.pause_playback(device_id=device_id)
-        return jsonify({'success': True})
+    qm.advance_to_next_pending()
+    return jsonify({'success': True})
 
 
 @app.route('/api/host/ban', methods=['POST'])
@@ -591,6 +575,27 @@ def api_host_settings():
         if url:
             db.set_setting('party_url', url)
 
+    if 'fallback_playlist_url' in data:
+        raw = (data['fallback_playlist_url'] or '').strip()
+        if not raw:
+            # Empty clears the fallback — the queue simply runs dry in silence.
+            db.set_setting('fallback_playlist_id', '')
+            db.set_setting('fallback_playlist_name', '')
+        else:
+            playlist_id = sc.parse_playlist_id(raw)
+            if not playlist_id:
+                return jsonify({'error': "That doesn't look like a Spotify playlist link."}), 400
+            if not sc.is_authenticated():
+                return jsonify({'error': 'Connect Spotify before setting a fallback playlist.'}), 400
+            meta = sc.get_playlist_meta(playlist_id)
+            if not meta:
+                return jsonify({'error': "Couldn't read that playlist. Make sure it's yours "
+                                         "or public (collaborative playlists aren't supported)."}), 400
+            if not meta['track_count']:
+                return jsonify({'error': f"'{meta['name']}' has no tracks in it."}), 400
+            db.set_setting('fallback_playlist_id', meta['id'])
+            db.set_setting('fallback_playlist_name', meta['name'])
+
     return jsonify({'success': True})
 
 
@@ -637,10 +642,15 @@ def api_host_spotify_status():
     connected = sc.is_authenticated()
     auth_url = sc.get_auth_url() if not connected else None
     party_url = db.get_setting('party_url', os.environ.get('PARTY_URL', 'http://localhost:5000'))
+    fallback_id = db.get_setting('fallback_playlist_id', '')
     return jsonify({
         'connected': connected,
         'auth_url': auth_url,
         'party_url': party_url,
+        'fallback_playlist_id': fallback_id,
+        'fallback_playlist_name': db.get_setting('fallback_playlist_name', ''),
+        'fallback_playlist_url': (f'https://open.spotify.com/playlist/{fallback_id}'
+                                  if fallback_id else ''),
     })
 
 

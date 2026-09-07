@@ -123,6 +123,23 @@ async function loadSpotifyStatus() {
       qrImg.src = '/qr?' + Date.now();
       partyUrlEl.textContent = data.party_url;
     }
+
+    const fbInput = $('fallback-playlist-input');
+    const fbStatus = $('fallback-playlist-status');
+    if (fbInput && document.activeElement !== fbInput) {
+      fbInput.value = data.fallback_playlist_url || '';
+    }
+    if (fbStatus) {
+      if (data.fallback_playlist_name) {
+        fbStatus.textContent = '\u2713 ' + data.fallback_playlist_name +
+          ' \u2014 plays whenever the queue is empty.';
+        fbStatus.style.color = 'var(--accent)';
+      } else {
+        fbStatus.textContent =
+          "No fallback set \u2014 music stops when the queue runs dry.";
+        fbStatus.style.color = 'var(--text-muted)';
+      }
+    }
   } catch (e) {}
 }
 
@@ -298,6 +315,9 @@ $('save-settings-btn').addEventListener('click', async () => {
   const partyUrl = $('party-url-input').value.trim();
   if (partyUrl) body.party_url = partyUrl;
 
+  // Always sent, so clearing the field clears the fallback.
+  body.fallback_playlist_url = $('fallback-playlist-input').value.trim();
+
   const res = await hostFetch('/api/host/settings', {
     method: 'POST',
     body: JSON.stringify(body),
@@ -307,7 +327,12 @@ $('save-settings-btn').addEventListener('click', async () => {
     $('new-password').value = '';
     loadSpotifyStatus();
   } else {
-    showToast('Failed to save settings', 'error');
+    let msg = 'Failed to save settings';
+    try {
+      const err = await res.json();
+      if (err && err.error) msg = err.error;
+    } catch (e) {}
+    showToast(msg, 'error');
   }
 });
 

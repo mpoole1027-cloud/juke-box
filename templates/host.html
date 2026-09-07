@@ -204,6 +204,18 @@
             <input id="party-url-input" type="text" class="input-field" placeholder="http://192.168.1.X:5000" style="margin-bottom:0">
           </div>
 
+          <!-- Fallback playlist -->
+          <div style="grid-column:1/-1">
+            <label style="font-size:0.78rem;color:var(--text-dim);display:block;margin-bottom:6px">
+              FALLBACK PLAYLIST
+            </label>
+            <input id="fallback-playlist-input" type="text" class="input-field"
+                   placeholder="Paste a Spotify playlist link — leave blank for none" style="margin-bottom:0">
+            <div id="fallback-playlist-status" style="margin-top:6px;font-size:0.72rem;color:var(--text-muted)">
+              Plays when the guest queue is empty, so there's never silence. Never modified.
+            </div>
+          </div>
+
         </div>
 
         <button id="save-settings-btn" class="btn btn-primary mt-12">SAVE SETTINGS</button>
