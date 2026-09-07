@@ -124,6 +124,35 @@ async function loadSpotifyStatus() {
       partyUrlEl.textContent = data.party_url;
     }
 
+    const idleSlider = $('idle-slider');
+    if (idleSlider && document.activeElement !== idleSlider &&
+        typeof data.idle_shutdown_hours === 'number') {
+      idleSlider.value = data.idle_shutdown_hours;
+      $('idle-val').textContent = data.idle_shutdown_hours;
+    }
+
+    const banner = $('standby-banner');
+    if (banner) banner.classList.toggle('hidden', !data.standing_down);
+
+    const sel = $('device-select');
+    if (sel && document.activeElement !== sel) {
+      try {
+        const dres = await hostFetch('/api/host/devices');
+        const ddata = await dres.json();
+        const want = ddata.preferred_device_id || '';
+        sel.innerHTML = '<option value="">Auto (whatever\u2019s active)</option>' +
+          (ddata.devices || []).map(d =>
+            `<option value="${d.id}">${d.name}${d.is_active ? ' \u2022 active' : ''}</option>`
+          ).join('');
+        sel.value = want;
+        if (want && sel.value !== want) {
+          // Pinned device isn't online right now — keep it selectable.
+          sel.innerHTML += `<option value="${want}">(pinned device, offline)</option>`;
+          sel.value = want;
+        }
+      } catch (e) {}
+    }
+
     const fbInput = $('fallback-playlist-input');
     const fbStatus = $('fallback-playlist-status');
     if (fbInput && document.activeElement !== fbInput) {
@@ -317,6 +346,8 @@ $('save-settings-btn').addEventListener('click', async () => {
 
   // Always sent, so clearing the field clears the fallback.
   body.fallback_playlist_url = $('fallback-playlist-input').value.trim();
+  body.preferred_device_id = $('device-select').value;
+  body.idle_shutdown_hours = parseInt($('idle-slider').value, 10);
 
   const res = await hostFetch('/api/host/settings', {
     method: 'POST',
@@ -492,3 +523,40 @@ function startPolling() {
 // Init
 // ----------------------------------------------------------------
 checkAuth();
+
+
+// ----------------------------------------------------------------
+// Party lifecycle
+// ----------------------------------------------------------------
+$('idle-slider').addEventListener('input', e => {
+  $('idle-val').textContent = e.target.value;
+});
+
+$('new-party-btn').addEventListener('click', async () => {
+  // Confirm: this clears the played-song history, skip counts and bans.
+  if (!window.confirm(
+      'Start a new party?\n\nClears the played-song history (so previously ' +
+      'played songs can be requested again), resets skip counts and unbans ' +
+      'everyone. Guest nicknames are kept.')) return;
+  const res = await hostFetch('/api/host/new_party', {
+    method: 'POST', body: JSON.stringify({}),
+  });
+  if (res.ok) {
+    const d = await res.json();
+    showToast(`New party! Cleared ${d.played_cleared} played songs, ` +
+              `${d.queue_cleared} queued, unbanned ${d.unbanned}.`, 'success');
+    loadSpotifyStatus();
+  } else {
+    showToast('Failed to start new party', 'error');
+  }
+});
+
+$('resume-party-btn').addEventListener('click', async () => {
+  const res = await hostFetch('/api/host/resume_party', {
+    method: 'POST', body: JSON.stringify({}),
+  });
+  if (res.ok) {
+    showToast('Party resumed', 'success');
+    loadSpotifyStatus();
+  }
+});

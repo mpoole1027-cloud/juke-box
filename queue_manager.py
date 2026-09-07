@@ -19,6 +19,39 @@ _last_playing_queue_id = None
 _current_is_ours = False
 _stop_event = threading.Event()
 
+# Idle standby. A forgotten server once controlled this account's playback for
+# 44 days; after IDLE_SHUTDOWN_HOURS with no guest or host action the worker
+# stops touching playback until someone explicitly resumes the party. It never
+# pauses on the way out — standing down means leaving playback exactly as it is.
+_last_activity = time.monotonic()
+_standing_down = False
+
+
+def note_activity():
+    """Record guest/host activity. Any real action keeps the party alive."""
+    global _last_activity
+    _last_activity = time.monotonic()
+
+
+def is_standing_down():
+    return _standing_down
+
+
+def idle_seconds():
+    """Seconds of inactivity before standby. 0 disables the feature."""
+    return _get_int_setting('idle_shutdown_hours', 6) * 3600
+
+
+def resume_party():
+    """Host explicitly brings the party back after standby."""
+    global _standing_down
+    was = _standing_down
+    _standing_down = False
+    note_activity()
+    if was:
+        logger.info("Party resumed by host — controlling playback again.")
+    return was
+
 
 def _get_int_setting(key, default):
     val = db.get_setting(key, str(default))
@@ -46,6 +79,12 @@ def _check_downvote_threshold(playing_item):
             logger.info(f"User {requester} banned after {skip_count} skipped songs.")
 
         _advance_to_next_pending()
+
+
+def get_party_device_id():
+    """Resolve the playback device, honouring the host's pinned choice."""
+    return sc.get_active_device_id(
+        preferred_device_id=db.get_setting('preferred_device_id') or None)
 
 
 def get_fallback_playlist_id():
@@ -79,7 +118,7 @@ def _start_fallback(device_id=None):
         logger.error(f"Could not confirm fallback playback state: {e}")
 
     if device_id is None:
-        device_id = sc.get_active_device_id()
+        device_id = get_party_device_id()
 
     meta = sc.get_playlist_meta(playlist_id)
     if not meta:
@@ -134,7 +173,7 @@ def _advance_to_next_pending():
     Returns the started queue item, or None if we fell back / did nothing.
     """
     global _current_spotify_track_id, _last_playing_queue_id, _current_is_ours
-    device_id = sc.get_active_device_id()
+    device_id = get_party_device_id()
     pending = db.get_pending_queue()
     if pending:
         next_item = pending[0]
@@ -167,10 +206,29 @@ def advance_to_next_pending():
 
 def background_worker():
     global _current_spotify_track_id, _last_playing_queue_id, _current_is_ours
+    global _standing_down
 
     logger.info("Queue manager background thread started.")
     while not _stop_event.is_set():
         try:
+            # Standby check runs outside _lock so request threads are never
+            # blocked behind an idle worker.
+            limit = idle_seconds()
+            if limit and not _standing_down and time.monotonic() - _last_activity > limit:
+                with _lock:
+                    _standing_down = True
+                    _current_spotify_track_id = None
+                    _last_playing_queue_id = None
+                    _current_is_ours = False
+                logger.info(
+                    "No activity for %.1fh — standing down. Playback left as-is; "
+                    "resume from the host panel to restart the party.",
+                    limit / 3600.0)
+
+            if _standing_down:
+                _stop_event.wait(5)
+                continue
+
             with _lock:
                 playback = sc.get_current_playback()
 

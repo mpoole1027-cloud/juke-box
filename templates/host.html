@@ -62,6 +62,11 @@
         <div class="mt-12" style="display:flex;gap:8px;flex-wrap:wrap">
           <button id="skip-btn" class="btn btn-danger btn-sm">⏭ FORCE SKIP</button>
           <button id="clear-queue-btn" class="btn btn-ghost btn-sm">🗑 CLEAR QUEUE</button>
+          <button id="new-party-btn" class="btn btn-primary btn-sm">🎉 NEW PARTY</button>
+        </div>
+        <div id="standby-banner" class="hidden" style="margin-top:10px;padding:8px 10px;border:1px solid var(--warning);border-radius:6px;font-size:0.76rem;color:var(--warning)">
+          Standing down — idle too long, not controlling Spotify.
+          <button id="resume-party-btn" class="btn btn-ghost btn-sm" style="margin-left:8px">RESUME</button>
         </div>
       </div>
 
@@ -202,6 +207,27 @@
               PARTY URL (for QR code)
             </label>
             <input id="party-url-input" type="text" class="input-field" placeholder="http://192.168.1.X:5000" style="margin-bottom:0">
+          </div>
+
+          <!-- Playback device -->
+          <div>
+            <label style="font-size:0.78rem;color:var(--text-dim);display:block;margin-bottom:6px">
+              PLAYBACK DEVICE
+            </label>
+            <select id="device-select" class="input-field" style="margin-bottom:0">
+              <option value="">Auto (whatever's active)</option>
+            </select>
+          </div>
+
+          <!-- Idle standby -->
+          <div>
+            <label style="font-size:0.78rem;color:var(--text-dim);display:block;margin-bottom:6px">
+              IDLE STANDBY (HOURS): <span id="idle-val" style="color:var(--primary)">6</span>
+            </label>
+            <input type="range" id="idle-slider" min="0" max="24" value="6">
+            <div style="font-size:0.68rem;color:var(--text-muted);margin-top:4px">
+              0 disables. Stops controlling Spotify after this long with no activity.
+            </div>
           </div>
 
           <!-- Fallback playlist -->

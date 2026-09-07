@@ -138,6 +138,12 @@ def _resolve_current_track():
     return current_track, playing_queue_item, current_queue_id
 
 
+@app.before_request
+def _note_party_activity():
+    if request.method == 'POST' and request.path.startswith('/api/'):
+        qm.note_activity()
+
+
 # ---------------------------------------------------------------------------
 # Page routes
 # ---------------------------------------------------------------------------
@@ -340,7 +346,7 @@ def api_queue():
     if sc.is_authenticated():
         playback = sc.get_current_playback()
         if not playback or not playback.get('is_playing'):
-            device_id = sc.get_active_device_id()
+            device_id = qm.get_party_device_id()
             ok, _ = sc.play_track(f'spotify:track:{track_id}', device_id=device_id)
             if ok:
                 db.update_queue_status(queue_id, 'playing')
@@ -575,6 +581,18 @@ def api_host_settings():
         if url:
             db.set_setting('party_url', url)
 
+    if 'preferred_device_id' in data:
+        db.set_setting('preferred_device_id', (data['preferred_device_id'] or '').strip())
+
+    if 'idle_shutdown_hours' in data:
+        try:
+            val = int(data['idle_shutdown_hours'])
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Idle shutdown must be a whole number of hours.'}), 400
+        if not 0 <= val <= 72:
+            return jsonify({'error': 'Idle shutdown must be between 0 and 72 hours (0 disables).'}), 400
+        db.set_setting('idle_shutdown_hours', val)
+
     if 'fallback_playlist_url' in data:
         raw = (data['fallback_playlist_url'] or '').strip()
         if not raw:
@@ -651,7 +669,36 @@ def api_host_spotify_status():
         'fallback_playlist_name': db.get_setting('fallback_playlist_name', ''),
         'fallback_playlist_url': (f'https://open.spotify.com/playlist/{fallback_id}'
                                   if fallback_id else ''),
+        'standing_down': qm.is_standing_down(),
+        'idle_shutdown_hours': int(db.get_setting('idle_shutdown_hours', '6')),
+        'preferred_device_id': db.get_setting('preferred_device_id', ''),
     })
+
+
+@app.route('/api/host/new_party', methods=['POST'])
+@require_host
+def api_host_new_party():
+    """Reset per-party state. Without this, played_tracks accumulates forever
+    and previously-played songs stay permanently un-requestable."""
+    data = request.get_json() or {}
+    stats = db.start_new_party(clear_users=bool(data.get('clear_users')))
+    qm.resume_party()
+    return jsonify({'success': True, **stats})
+
+
+@app.route('/api/host/devices')
+@require_host
+def api_host_devices():
+    return jsonify({
+        'devices': sc.list_devices(),
+        'preferred_device_id': db.get_setting('preferred_device_id', ''),
+    })
+
+
+@app.route('/api/host/resume_party', methods=['POST'])
+@require_host
+def api_host_resume_party():
+    return jsonify({'success': True, 'was_standing_down': qm.resume_party()})
 
 
 @app.route('/api/host/reorder', methods=['POST'])
@@ -688,7 +735,7 @@ def api_host_queue():
     if sc.is_authenticated():
         playback = sc.get_current_playback()
         if not playback or not playback.get('is_playing'):
-            device_id = sc.get_active_device_id()
+            device_id = qm.get_party_device_id()
             ok, _ = sc.play_track(f'spotify:track:{track_id}', device_id=device_id)
             if ok:
                 db.update_queue_status(queue_id, 'playing')

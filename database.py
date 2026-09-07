@@ -501,6 +501,44 @@ def clear_reactions():
             conn.close()
 
 
+def start_new_party(clear_users=False):
+    """Reset the per-party state so a fresh party starts clean.
+
+    played_tracks backs the 'already played tonight' duplicate check, but
+    nothing ever cleared it — so songs from a previous party (or anything the
+    app happened to observe while running) stayed permanently un-requestable.
+    Same for skip counts and bans, which are meant to be per-night.
+
+    Returns a dict of what was cleared, for reporting back to the host.
+    """
+    with _db_lock:
+        conn = get_connection()
+        try:
+            played = conn.execute("SELECT COUNT(*) FROM played_tracks").fetchone()[0]
+            banned = conn.execute(
+                "SELECT COUNT(*) FROM users WHERE is_banned = 1").fetchone()[0]
+            queued = conn.execute(
+                "SELECT COUNT(*) FROM queue WHERE status IN ('pending','playing')"
+            ).fetchone()[0]
+
+            conn.execute("DELETE FROM played_tracks")
+            conn.execute("UPDATE users SET songs_skipped_count = 0, is_banned = 0")
+            conn.execute(
+                "UPDATE queue SET status = 'skipped' WHERE status IN ('pending','playing')")
+            if clear_users:
+                # Votes and reactions reference queue rows, and queue has an FK
+                # to users — with foreign_keys=ON the delete order matters.
+                conn.execute("DELETE FROM upvotes")
+                conn.execute("DELETE FROM downvotes")
+                conn.execute("DELETE FROM reactions")
+                conn.execute("DELETE FROM queue")
+                conn.execute("DELETE FROM users")
+            conn.commit()
+            return {'played_cleared': played, 'unbanned': banned, 'queue_cleared': queued}
+        finally:
+            conn.close()
+
+
 def clear_pending_queue():
     with _db_lock:
         conn = get_connection()

@@ -313,7 +313,30 @@ def is_playing_our_playlist(playlist_id):
     return context.get('uri') == f'spotify:playlist:{playlist_id}'
 
 
-def get_active_device_id():
+def list_devices():
+    """All Spotify Connect devices visible to this account."""
+    sp = get_spotify()
+    if not sp:
+        return []
+    try:
+        devices = sp.devices() or {}
+        return [
+            {'id': d['id'], 'name': d.get('name', 'Unknown'),
+             'type': d.get('type', ''), 'is_active': bool(d.get('is_active'))}
+            for d in devices.get('devices', []) if d.get('id')
+        ]
+    except Exception as e:
+        logger.error(f"Error listing devices: {e}")
+        return []
+
+
+def get_active_device_id(preferred_device_id=None):
+    """Resolve which device the party should play on.
+
+    Order: the host's pinned device (if it's still online) > whatever Spotify
+    reports as active > first available. Without a pin the last case is a coin
+    flip, which at a party can mean the host's phone instead of the speakers.
+    """
     sp = get_spotify()
     if not sp:
         return None
@@ -321,10 +344,19 @@ def get_active_device_id():
         devices = sp.devices()
         if not devices or not devices.get('devices'):
             return None
-        active = [d for d in devices['devices'] if d['is_active']]
+        available = devices['devices']
+
+        if preferred_device_id:
+            for d in available:
+                if d['id'] == preferred_device_id:
+                    return d['id']
+            logger.warning(
+                f"Pinned device {preferred_device_id} is offline — falling back.")
+
+        active = [d for d in available if d['is_active']]
         if active:
             return active[0]['id']
-        return devices['devices'][0]['id']
+        return available[0]['id']
     except Exception as e:
         logger.error(f"Error getting device ID: {e}")
         return None
