@@ -138,6 +138,14 @@ def _resolve_current_track():
     return current_track, playing_queue_item, current_queue_id
 
 
+UI_THEMES = ('modern', 'classic')
+
+
+def _ui_theme():
+    theme = db.get_setting('ui_theme', 'modern')
+    return theme if theme in UI_THEMES else 'modern'
+
+
 @app.before_request
 def _note_party_activity():
     if request.method == 'POST' and request.path.startswith('/api/'):
@@ -149,17 +157,17 @@ def _note_party_activity():
 # ---------------------------------------------------------------------------
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html', ui_theme=_ui_theme())
 
 
 @app.route('/host')
 def host():
-    return render_template('host.html')
+    return render_template('host.html', ui_theme=_ui_theme())
 
 
 @app.route('/tv')
 def tv():
-    return render_template('tv.html')
+    return render_template('tv.html', ui_theme=_ui_theme())
 
 
 @app.route('/qr')
@@ -284,6 +292,7 @@ def api_status():
         } if user else None,
         'settings': settings,
         'spotify_connected': sc.is_authenticated(),
+        'ui_theme': _ui_theme(),
     })
 
 
@@ -510,6 +519,7 @@ def api_tv():
         'stats': db.get_party_stats(),
         'leaderboards': db.get_leaderboards(),
         'recent_reactions': db.get_recent_reactions(20),
+        'ui_theme': _ui_theme(),
     })
 
 
@@ -554,6 +564,11 @@ def api_host_unban():
 @require_host
 def api_host_settings():
     data = request.get_json() or {}
+
+    if 'ui_theme' in data:
+        if data['ui_theme'] not in UI_THEMES:
+            return jsonify({'error': 'Theme must be "modern" or "classic".'}), 400
+        db.set_setting('ui_theme', data['ui_theme'])
 
     if 'downvote_threshold' in data:
         val = int(data['downvote_threshold'])

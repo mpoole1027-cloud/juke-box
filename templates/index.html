@@ -1,11 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="{{ ui_theme }}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>Party Jukebox</title>
   <link rel="stylesheet" href="/static/css/jukebox.css">
-  <meta name="theme-color" content="#f5efe1">
+  <link id="classic-css" rel="stylesheet" href="/static/css/classic.css"{% if ui_theme != 'classic' %} disabled{% endif %}>
+  <meta name="theme-color" content="{{ '#1a0c08' if ui_theme == 'classic' else '#f5efe1' }}">
 </head>
 <body>
 
@@ -63,12 +64,12 @@
               <circle cx="50" cy="50" r="32" fill="none" stroke="#1e1e1e" stroke-width="1"/>
               <circle cx="50" cy="50" r="28" fill="none" stroke="#1e1e1e" stroke-width="1"/>
               <!-- Label center -->
-              <circle cx="50" cy="50" r="14" fill="#c1573a"/>
-              <circle cx="50" cy="50" r="14" fill="none" stroke="rgba(107,122,63,0.5)" stroke-width="1"/>
+              <circle class="vinyl-label" cx="50" cy="50" r="14" fill="#c1573a"/>
+              <circle class="vinyl-label-ring" cx="50" cy="50" r="14" fill="none" stroke="rgba(107,122,63,0.5)" stroke-width="1"/>
               <!-- Highlight -->
-              <circle cx="50" cy="50" r="3" fill="#f5efe1"/>
+              <circle class="vinyl-hole" cx="50" cy="50" r="3" fill="#f5efe1"/>
               <!-- Rim -->
-              <circle cx="50" cy="50" r="48" fill="none" stroke="rgba(107,122,63,0.2)" stroke-width="2"/>
+              <circle class="vinyl-rim" cx="50" cy="50" r="48" fill="none" stroke="rgba(107,122,63,0.2)" stroke-width="2"/>
             </svg>
             <img id="album-art-img" class="album-art-small hidden" src="" alt="Album art">
           </div>

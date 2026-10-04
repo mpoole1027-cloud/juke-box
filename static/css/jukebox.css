@@ -28,6 +28,9 @@
   --success:      #5f7a3a;
   --shadow-soft:  0 1px 3px rgba(43,32,22,0.07);
   --shadow-card:  0 4px 16px rgba(43,32,22,0.08);
+  /* For inline styles in templates, so classic.css can swap them */
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-ui:      'Inter', sans-serif;
 }
 
 /* ----------------------------------------------------------------

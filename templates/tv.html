@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="{{ ui_theme }}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Party Jukebox — TV Display</title>
   <link rel="stylesheet" href="/static/css/jukebox.css">
+  <link id="classic-css" rel="stylesheet" href="/static/css/classic.css"{% if ui_theme != 'classic' %} disabled{% endif %}>
   <style>
     body {
       overflow: hidden;
@@ -22,6 +23,7 @@
       letter-spacing: 2px;
       z-index: 10000;
     }
+    [data-theme="classic"] body::after { color: rgba(255,255,255,0.15); }
   </style>
 </head>
 <body>
@@ -75,10 +77,10 @@
           <circle cx="50" cy="50" r="36" fill="none" stroke="#1a1a1a" stroke-width="1"/>
           <circle cx="50" cy="50" r="32" fill="none" stroke="#1a1a1a" stroke-width="0.8"/>
           <circle cx="50" cy="50" r="28" fill="none" stroke="#1a1a1a" stroke-width="0.8"/>
-          <circle cx="50" cy="50" r="14" fill="#c1573a"/>
-          <circle cx="50" cy="50" r="14" fill="none" stroke="rgba(107,122,63,0.6)" stroke-width="1.5"/>
-          <circle cx="50" cy="50" r="3.5" fill="#f5efe1"/>
-          <circle cx="50" cy="50" r="48" fill="none" stroke="rgba(107,122,63,0.25)" stroke-width="2"/>
+          <circle class="vinyl-label" cx="50" cy="50" r="14" fill="#c1573a"/>
+          <circle class="vinyl-label-ring" cx="50" cy="50" r="14" fill="none" stroke="rgba(107,122,63,0.6)" stroke-width="1.5"/>
+          <circle class="vinyl-hole" cx="50" cy="50" r="3.5" fill="#f5efe1"/>
+          <circle class="vinyl-rim" cx="50" cy="50" r="48" fill="none" stroke="rgba(107,122,63,0.25)" stroke-width="2"/>
         </svg>
         <img id="tv-album-art" class="tv-album-art hidden" src="" alt="Album art">
       </div>

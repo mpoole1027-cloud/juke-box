@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="{{ ui_theme }}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Jukebox Host Panel</title>
   <link rel="stylesheet" href="/static/css/jukebox.css">
+  <link id="classic-css" rel="stylesheet" href="/static/css/classic.css"{% if ui_theme != 'classic' %} disabled{% endif %}>
 </head>
 <body>
 
@@ -39,7 +40,7 @@
 
   <!-- Header -->
   <div style="background:var(--bg-card);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;justify-content:space-between">
-    <h1 style="font-family:'Fraunces',Georgia,serif;font-weight:600;font-size:1.3rem;color:var(--text)">🎛 Host Panel</h1>
+    <h1 style="font-family:var(--font-display);font-weight:600;font-size:1.3rem;color:var(--text)">🎛 Host Panel</h1>
     <div style="display:flex;gap:10px;align-items:center">
       <span style="color:var(--text-dim);font-size:0.78rem">Spotify: <span id="spotify-status">checking...</span></span>
       <a id="spotify-connect-btn" href="/auth/spotify" class="btn btn-primary btn-sm hidden">CONNECT SPOTIFY</a>
@@ -98,6 +99,24 @@
     <!-- ── Main content ── -->
     <div class="host-main">
 
+      <!-- Appearance -->
+      <div class="card">
+        <div class="section-header">
+          <h2>APPEARANCE</h2>
+          <div class="line"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+          <label class="toggle-label">
+            <input type="checkbox" id="classic-toggle">
+            <span class="toggle-switch"></span>
+            Classic look
+          </label>
+          <span style="color:var(--text-dim);font-size:0.78rem">
+            The original diner-jukebox style. Switches every guest phone and the TV.
+          </span>
+        </div>
+      </div>
+
       <!-- Demo Mode -->
       <div class="card" style="border-color:rgba(212,175,55,0.6)">
         <div class="section-header">
@@ -113,7 +132,7 @@
             <span class="toggle-switch"></span>
             Demo Mode
           </label>
-          <span id="demo-status" style="font-family:'Inter',sans-serif;font-size:0.75rem;letter-spacing:1px;color:var(--text-muted)">OFF</span>
+          <span id="demo-status" style="font-family:var(--font-ui);font-size:0.75rem;letter-spacing:1px;color:var(--text-muted)">OFF</span>
         </div>
         <div id="demo-track-form">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
@@ -147,7 +166,7 @@
 
         <!-- Manual entry (always available) -->
         <details id="host-manual-section" style="margin-top:8px">
-          <summary style="cursor:pointer;color:var(--text-dim);font-size:0.8rem;font-family:'Inter',sans-serif;letter-spacing:1px;margin-bottom:10px">
+          <summary style="cursor:pointer;color:var(--text-dim);font-size:0.8rem;font-family:var(--font-ui);letter-spacing:1px;margin-bottom:10px">
             ▸ ADD MANUALLY (demo / no Spotify)
           </summary>
           <div style="margin-top:10px">

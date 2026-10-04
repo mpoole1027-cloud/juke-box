@@ -12,6 +12,19 @@ function escHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+// ----------------------------------------------------------------
+// Theme (host-controlled; mirrored from every poll)
+// ----------------------------------------------------------------
+function applyTheme(theme) {
+  if (!theme || document.documentElement.dataset.theme === theme) return;
+  const classic = theme === 'classic';
+  document.documentElement.dataset.theme = theme;
+  const link = document.getElementById('classic-css');
+  if (link) link.disabled = !classic;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = classic ? '#1a0c08' : '#f5efe1';
+}
+
 function showToast(msg, type = '') {
   const container = $('toast-container');
   const toast = document.createElement('div');
@@ -81,6 +94,8 @@ async function loadStatus() {
     renderNowPlaying(data.current_track);
     renderManageQueue(data.queue);
     renderSettings(data.settings);
+    applyTheme(data.ui_theme);
+    $('classic-toggle').checked = data.ui_theme === 'classic';
   } catch (e) {}
 }
 
@@ -391,6 +406,24 @@ $('demo-toggle').addEventListener('change', async e => {
     body: JSON.stringify({ enabled }),
   });
   showToast(enabled ? 'Demo mode ON' : 'Demo mode OFF', 'success');
+});
+
+// ----------------------------------------------------------------
+// Appearance
+// ----------------------------------------------------------------
+$('classic-toggle').addEventListener('change', async e => {
+  const theme = e.target.checked ? 'classic' : 'modern';
+  const res = await hostFetch('/api/host/settings', {
+    method: 'POST',
+    body: JSON.stringify({ ui_theme: theme }),
+  });
+  if (res.ok) {
+    applyTheme(theme);
+    showToast(theme === 'classic' ? 'Classic look on' : 'Modern look on', 'success');
+  } else {
+    e.target.checked = !e.target.checked;
+    showToast('Failed to change the look', 'error');
+  }
 });
 
 $('set-demo-track-btn').addEventListener('click', async () => {

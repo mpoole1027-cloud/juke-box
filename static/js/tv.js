@@ -13,6 +13,19 @@ function escHtml(str) {
 }
 
 // ----------------------------------------------------------------
+// Theme (host-controlled; mirrored from every poll)
+// ----------------------------------------------------------------
+function applyTheme(theme) {
+  if (!theme || document.documentElement.dataset.theme === theme) return;
+  const classic = theme === 'classic';
+  document.documentElement.dataset.theme = theme;
+  const link = document.getElementById('classic-css');
+  if (link) link.disabled = !classic;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = classic ? '#1a0c08' : '#f5efe1';
+}
+
+// ----------------------------------------------------------------
 // State
 // ----------------------------------------------------------------
 let prevFireCount = 0;
@@ -348,6 +361,7 @@ async function pollTv() {
     const res = await fetch('/api/tv');
     if (!res.ok) return;
     const data = await res.json();
+    applyTheme(data.ui_theme);
     renderNowPlaying(data.current_track, data.reactions);
     renderQueue(data.queue);
     renderStats(data.stats);
