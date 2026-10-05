@@ -1,4 +1,5 @@
 import sqlite3
+import secrets
 import threading
 import os
 
@@ -122,6 +123,9 @@ def init_db():
                     (key, value)
                 )
             _ensure_host_password_hash(cursor)
+            cursor.execute(
+                "INSERT OR IGNORE INTO settings (key, value) VALUES ('party_code', ?)",
+                (generate_party_code(),))
             conn.commit()
         finally:
             conn.close()
@@ -157,6 +161,22 @@ def _ensure_host_password_hash(cursor):
             "INSERT OR REPLACE INTO settings (key, value) VALUES ('host_password_hash', ?)",
             (generate_password_hash(seed),))
     cursor.execute("DELETE FROM settings WHERE key = 'host_password'")
+
+
+# No 0/O or 1/I/L, so a code read off a screen can be typed back reliably.
+PARTY_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+PARTY_CODE_LENGTH = 6
+
+
+def generate_party_code():
+    return ''.join(secrets.choice(PARTY_CODE_ALPHABET) for _ in range(PARTY_CODE_LENGTH))
+
+
+def rotate_party_code():
+    """New code for a new party, so links from earlier parties stop working."""
+    code = generate_party_code()
+    set_setting('party_code', code)
+    return code
 
 
 def check_host_password(password):

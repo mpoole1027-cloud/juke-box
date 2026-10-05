@@ -422,11 +422,50 @@ function checkMySongTransitions(data) {
   myPendingTrackIds = myIdsNow;
 }
 
+// ----------------------------------------------------------------
+// Party code gate
+// ----------------------------------------------------------------
+function showJoinGate(show) {
+  $('join-gate').classList.toggle('hidden', !show);
+  if (show) {
+    $('main-content').classList.add('hidden');
+    $('ban-banner').classList.add('hidden');
+    $('spotify-warning').classList.add('hidden');
+    $('nickname-display').classList.add('hidden');
+  } else {
+    $('nickname-display').classList.remove('hidden');
+  }
+}
+
+$('join-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const code = $('join-code').value.trim().toUpperCase();
+  if (!code) return;
+  try {
+    const res = await apiFetch('/api/join', { method: 'POST', body: JSON.stringify({ code }) });
+    if (!res.ok) {
+      $('join-error').classList.remove('hidden');
+      return;
+    }
+    $('join-error').classList.add('hidden');
+    history.replaceState(null, '', '/');
+    showToast("You're in! 🎉", 'success');
+    pollStatus();
+  } catch (err) {
+    showToast('Network error', 'error');
+  }
+});
+
 async function pollStatus() {
   try {
     const res = await apiFetch('/api/status');
     if (!res.ok) return;
     const data = await res.json();
+    if (data.party_code_required) {
+      showJoinGate(true);
+      return;
+    }
+    showJoinGate(false);
     state = data;
 
     applyTheme(data.ui_theme);

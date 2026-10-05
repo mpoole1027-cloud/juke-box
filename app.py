@@ -94,6 +94,49 @@ def get_user_id_from_request(create=True):
     return uid or ''
 
 
+def has_party_access():
+    """True for the host, and for guests who arrived with tonight's party code."""
+    if session.get('is_host'):
+        return True
+    code = db.get_setting('party_code', '')
+    return bool(code) and hmac.compare_digest(session.get('party_code', ''), code)
+
+
+def require_party(f):
+    """Decorator for guest actions: a leaked URL alone isn't enough to join."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if has_party_access():
+            return f(*args, **kwargs)
+        return jsonify({'error': 'Scan the party QR code to join.',
+                        'code': 'party_code_required'}), 403
+    return decorated
+
+
+def _accept_party_code(raw):
+    """Store the code in the session if it's tonight's. Returns True on success."""
+    code = (raw or '').strip().upper()
+    current = db.get_setting('party_code', '')
+    if code and current and hmac.compare_digest(code, current):
+        session['party_code'] = current
+        session.permanent = True
+        return True
+    return False
+
+
+def party_links():
+    """Invite and TV links for the host panel. The code rides in the query string."""
+    party_url = db.get_setting('party_url', os.environ.get('PARTY_URL', 'http://localhost:5000'))
+    base = party_url.rstrip('/')
+    code = db.get_setting('party_code', '')
+    return {
+        'party_url': party_url,
+        'party_code': code,
+        'invite_url': f'{base}/?p={code}',
+        'tv_url': f'{base}/tv?p={code}',
+    }
+
+
 def get_or_init_playlist():
     """Return the cached jukebox playlist_id, creating it if needed."""
     playlist_id = db.get_setting('jukebox_playlist_id')
@@ -176,8 +219,13 @@ def _note_party_activity():
 # ---------------------------------------------------------------------------
 @app.route('/')
 def index():
+    if 'p' in request.args:
+        ok = _accept_party_code(request.args['p'])
+        # Drop the code from the address bar so screenshots don't share it.
+        return redirect(url_for('index', **({} if ok else {'bad_code': 1})))
     get_or_create_user(get_user_id_from_request())
-    return render_template('index.html', ui_theme=_ui_theme())
+    return render_template('index.html', ui_theme=_ui_theme(),
+                           bad_code='bad_code' in request.args)
 
 
 @app.route('/host')
@@ -187,14 +235,28 @@ def host():
 
 @app.route('/tv')
 def tv():
+    if 'p' in request.args:
+        _accept_party_code(request.args['p'])
+        return redirect(url_for('tv'))
     return render_template('tv.html', ui_theme=_ui_theme())
 
 
+@app.route('/api/join', methods=['POST'])
+def api_join():
+    """Manual entry of the party code, for guests who can't scan the QR."""
+    data = request.get_json() or {}
+    if _accept_party_code(data.get('code')):
+        get_or_create_user(get_user_id_from_request())
+        return jsonify({'success': True})
+    return jsonify({'error': "That code doesn't match tonight's party."}), 403
+
+
 @app.route('/qr')
+@require_host
 def qr_code():
+    # Host-only: the QR carries the party code.
     import qrcode
-    party_url = db.get_setting('party_url', os.environ.get('PARTY_URL', 'http://localhost:5000'))
-    img = qrcode.make(party_url)
+    img = qrcode.make(party_links()['invite_url'])
     buf = io.BytesIO()
     img.save(buf, 'PNG')
     buf.seek(0)
@@ -265,6 +327,18 @@ def host_auth_check():
 # ---------------------------------------------------------------------------
 @app.route('/api/status')
 def api_status():
+    if not has_party_access():
+        # Outsiders (and cookieless local pollers like party-lights) see only
+        # what's playing: no queue, nicknames, dedications or settings.
+        track, _, _ = _resolve_current_track()
+        public_track = ({k: track.get(k) for k in ('track_id', 'track_name', 'artist', 'is_playing')}
+                        if track else None)
+        return jsonify({
+            'party_code_required': True,
+            'current_track': public_track,
+            'ui_theme': _ui_theme(),
+        })
+
     user_id = get_user_id_from_request(create=False)
     user = get_or_create_user(user_id) if user_id else None
 
@@ -328,6 +402,7 @@ def api_status():
 
 
 @app.route('/api/search')
+@require_party
 def api_search():
 
     q = request.args.get('q', '').strip()
@@ -342,6 +417,7 @@ def api_search():
 
 
 @app.route('/api/queue', methods=['POST'])
+@require_party
 def api_queue():
     user_id = get_user_id_from_request()
     if not user_id:
@@ -392,6 +468,7 @@ def api_queue():
 
 
 @app.route('/api/downvote', methods=['POST'])
+@require_party
 def api_downvote():
     user_id = get_user_id_from_request()
     if not user_id:
@@ -435,6 +512,7 @@ def api_downvote():
 
 
 @app.route('/api/react', methods=['POST'])
+@require_party
 def api_react():
     user_id = get_user_id_from_request()
     if not user_id:
@@ -455,6 +533,7 @@ def api_react():
 
 
 @app.route('/api/user/nickname', methods=['POST'])
+@require_party
 def api_set_nickname():
     user_id = get_user_id_from_request()
     if not user_id:
@@ -475,6 +554,7 @@ def api_set_nickname():
 
 
 @app.route('/api/upvote', methods=['POST'])
+@require_party
 def api_upvote():
     user_id = get_user_id_from_request()
     if not user_id:
@@ -502,6 +582,7 @@ def api_upvote():
 
 
 @app.route('/api/queue/<int:queue_id>', methods=['DELETE'])
+@require_party
 def api_remove_queue_item(queue_id):
     user_id = get_user_id_from_request()
     if not user_id:
@@ -520,8 +601,9 @@ def api_remove_queue_item(queue_id):
 
 
 @app.route('/api/tv')
+@require_party
 def api_tv():
-    """Public TV dashboard payload (no auth)."""
+    """TV dashboard payload. Needs the party code (open /tv?p=CODE) or a host session."""
     current_track, playing_queue_item, current_queue_id = _resolve_current_track()
 
     reactions = db.get_reaction_counts(current_queue_id) if current_queue_id else db.get_reaction_counts()
@@ -706,12 +788,11 @@ def api_host_users():
 def api_host_spotify_status():
     connected = sc.is_authenticated()
     auth_url = url_for('auth_spotify') if not connected else None
-    party_url = db.get_setting('party_url', os.environ.get('PARTY_URL', 'http://localhost:5000'))
     fallback_id = db.get_setting('fallback_playlist_id', '')
     return jsonify({
         'connected': connected,
         'auth_url': auth_url,
-        'party_url': party_url,
+        **party_links(),
         'fallback_playlist_id': fallback_id,
         'fallback_playlist_name': db.get_setting('fallback_playlist_name', ''),
         'fallback_playlist_url': (f'https://open.spotify.com/playlist/{fallback_id}'
@@ -729,8 +810,10 @@ def api_host_new_party():
     and previously-played songs stay permanently un-requestable."""
     data = request.get_json() or {}
     stats = db.start_new_party(clear_users=bool(data.get('clear_users')))
+    db.rotate_party_code()
+    session['party_code'] = db.get_setting('party_code')
     qm.resume_party()
-    return jsonify({'success': True, **stats})
+    return jsonify({'success': True, **stats, **party_links()})
 
 
 @app.route('/api/host/devices')

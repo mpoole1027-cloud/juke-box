@@ -112,6 +112,24 @@ async function loadDemoState() {
   } catch (e) {}
 }
 
+let currentInviteUrl = '';
+
+$('copy-invite-btn').addEventListener('click', async () => {
+  if (!currentInviteUrl) return;
+  try {
+    await navigator.clipboard.writeText(currentInviteUrl);
+    showToast('Invite link copied', 'success');
+  } catch (e) {
+    // Clipboard API needs HTTPS or localhost; fall back to selecting the text.
+    const range = document.createRange();
+    range.selectNodeContents($('party-url-display'));
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    showToast('Press Cmd+C to copy the selected link');
+  }
+});
+
 async function loadSpotifyStatus() {
   try {
     const res = await hostFetch('/api/host/spotify_status');
@@ -134,9 +152,12 @@ async function loadSpotifyStatus() {
       }
     }
 
-    if (data.party_url) {
+    if (data.invite_url && data.invite_url !== currentInviteUrl) {
+      currentInviteUrl = data.invite_url;
       qrImg.src = '/qr?' + Date.now();
-      partyUrlEl.textContent = data.party_url;
+      partyUrlEl.textContent = data.invite_url;
+      $('party-code-display').textContent = data.party_code || '';
+      $('tv-link').href = data.tv_url || '/tv';
     }
 
     const idleSlider = $('idle-slider');
@@ -569,8 +590,9 @@ $('new-party-btn').addEventListener('click', async () => {
   // Confirm: this clears the played-song history, skip counts and bans.
   if (!window.confirm(
       'Start a new party?\n\nClears the played-song history (so previously ' +
-      'played songs can be requested again), resets skip counts and unbans ' +
-      'everyone. Guest nicknames are kept.')) return;
+      'played songs can be requested again), resets skip counts, unbans ' +
+      'everyone and changes the party code, so old invite links stop ' +
+      'working. Guest nicknames are kept.')) return;
   const res = await hostFetch('/api/host/new_party', {
     method: 'POST', body: JSON.stringify({}),
   });

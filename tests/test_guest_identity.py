@@ -11,6 +11,14 @@ def app_module(db, monkeypatch):
     return app_module
 
 
+def join(app_module):
+    """A browser that scanned tonight's QR code."""
+    c = app_module.app.test_client()
+    c.get('/?p=' + app_module.db.get_setting('party_code'))
+    c.get('/')
+    return c
+
+
 def queue_song(client, track='t' * 22):
     return client.post('/api/queue', json={
         'track_id': track, 'track_name': 'Song', 'artist': 'Artist', 'duration_ms': 1000})
@@ -26,24 +34,21 @@ def test_each_browser_gets_its_own_guest(app_module):
 
 
 def test_header_cannot_pick_an_identity(app_module, db):
-    victim = app_module.app.test_client()
-    victim.get('/')
+    victim = join(app_module)
     with victim.session_transaction() as s:
         victim_id = s['guest_id']
     assert queue_song(victim).status_code == 200
     item = db.get_pending_queue()[0]
 
-    attacker = app_module.app.test_client()
+    attacker = join(app_module)
     res = attacker.delete(f"/api/queue/{item['id']}", headers={'X-User-ID': victim_id})
     assert res.status_code == 403
     assert db.get_pending_queue()
 
 
 def test_status_marks_only_my_songs_and_hides_ids(app_module):
-    me = app_module.app.test_client()
-    other = app_module.app.test_client()
-    me.get('/')
-    other.get('/')
+    me = join(app_module)
+    other = join(app_module)
     queue_song(me, 'm' * 22)
     queue_song(other, 'o' * 22)
 
@@ -61,8 +66,10 @@ def test_cookieless_pollers_do_not_create_guests(app_module, db):
 
 
 def test_ban_sticks_to_the_browser(app_module, db):
-    c = app_module.app.test_client()
-    c.get('/')
+    c = join(app_module)
+    assert queue_song(c, 'x' * 22).status_code == 200
     with c.session_transaction() as s:
         db.ban_user(s['guest_id'])
-    assert queue_song(c).status_code == 403
+    res = queue_song(c, 'y' * 22)
+    assert res.status_code == 403
+    assert 'banned' in res.get_json()['error']

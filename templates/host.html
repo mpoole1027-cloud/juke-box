@@ -91,7 +91,13 @@
         <p style="color:var(--text-dim);font-size:0.75rem;margin-bottom:10px">Guests scan this to join the party</p>
         <img id="qr-img" src="/qr" alt="QR Code"
           style="width:160px;height:160px;border:3px solid var(--primary);border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,0.3)">
-        <div id="party-url-display" style="margin-top:8px;font-size:0.72rem;color:var(--accent)"></div>
+        <div id="party-url-display" style="margin-top:8px;font-size:0.72rem;color:var(--accent);word-break:break-all"></div>
+        <div style="margin-top:6px;font-size:0.8rem">Party code: <strong id="party-code-display" style="letter-spacing:0.15em"></strong></div>
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:10px">
+          <button id="copy-invite-btn" class="btn btn-cyan btn-sm" type="button">COPY INVITE LINK</button>
+          <a id="tv-link" class="btn btn-sm" href="/tv" target="_blank" rel="noopener">OPEN TV SCREEN</a>
+        </div>
+        <p style="color:var(--text-dim);font-size:0.7rem;margin-top:8px">Starting a new party changes the code, so old links stop working.</p>
       </div>
 
     </div><!-- end sidebar -->

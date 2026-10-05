@@ -32,6 +32,22 @@
     <span style="color:var(--warning);font-size:0.85rem">⚠ Spotify not connected — host needs to authorize at <a href="/host" style="color:var(--accent)">/host</a></span>
   </div>
 
+  <!-- Join gate (shown until the guest has tonight's party code) -->
+  <div id="join-gate" class="card hidden" style="text-align:center">
+    <div class="section-header">
+      <h2>JOIN THE PARTY</h2>
+      <div class="line"></div>
+    </div>
+    <p style="font-size:0.9rem;margin-bottom:12px">Scan the QR code at the party, or type the 6-character party code from the host.</p>
+    <p id="join-error" class="{{ '' if bad_code else 'hidden' }}" style="color:var(--warning);font-size:0.82rem;margin-bottom:10px">That code doesn't match tonight's party. Check it with the host and try again.</p>
+    <form id="join-form" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+      <input id="join-code" class="search-input" type="text" maxlength="6" autocomplete="off"
+        autocapitalize="characters" spellcheck="false" placeholder="ABC234" aria-label="Party code"
+        style="max-width:160px;text-align:center;letter-spacing:0.2em;text-transform:uppercase;padding-left:12px">
+      <button class="btn btn-cyan" type="submit">JOIN</button>
+    </form>
+  </div>
+
   <!-- Ban banner (shown only if user is banned) -->
   <div id="ban-banner" class="ban-banner hidden">
     <h2>🚫 SILENCED!</h2>
@@ -40,7 +56,7 @@
   </div>
 
   <!-- Main content (hidden when banned) -->
-  <div id="main-content">
+  <div id="main-content" class="hidden">
 
     <!-- Now Playing -->
     <div class="card now-playing-card">
