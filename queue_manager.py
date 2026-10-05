@@ -33,6 +33,71 @@ _standing_down = False
 # Tracks whether we're mid-outage, so the warning logs once, not every tick.
 _last_playback_error = False
 
+# What's stopping the music right now, if anything: {'code', 'detail'} or None.
+# Failures used to only reach the server log, so a missing speaker looked to
+# guests like a queue that silently stopped moving.
+_playback_issue = None
+
+ISSUE_MESSAGES = {
+    # code: (host panel, guest page)
+    'spotify_not_connected': (
+        "Spotify isn't connected. Use Connect Spotify in the host panel.",
+        "The host is reconnecting Spotify. Hang tight."),
+    'spotify_unreachable': (
+        "Can't reach Spotify. Retrying every few seconds.",
+        "Spotify isn't responding. Retrying..."),
+    'no_device': (
+        "No Spotify device is online. Open Spotify on the party Mac, or pick a "
+        "device in Settings. The next song starts as soon as one appears.",
+        "Music is paused while the host sorts out the speakers."),
+    'play_failed': (
+        "Spotify wouldn't play the next song ({detail}). Retrying every few seconds.",
+        "Music is paused while the host sorts something out."),
+}
+# Issues the worker clears or retries on its own, vs. ones only a successful
+# play clears.
+_SPOTIFY_STATE_ISSUES = ('spotify_not_connected', 'spotify_unreachable')
+_PLAY_ISSUES = ('no_device', 'play_failed')
+
+
+def _set_issue(code, detail=''):
+    global _playback_issue
+    new = {'code': code, 'detail': detail}
+    if _playback_issue != new:
+        logger.warning("Playback issue: %s %s", code, detail)
+    _playback_issue = new
+
+
+def _clear_issue(codes=None):
+    global _playback_issue
+    if _playback_issue and (codes is None or _playback_issue['code'] in codes):
+        logger.info("Playback issue cleared: %s", _playback_issue['code'])
+        _playback_issue = None
+
+
+def get_playback_issue():
+    """The current problem as {'code', 'host_message', 'guest_message'}, or None."""
+    issue = _playback_issue
+    if not issue:
+        return None
+    host_msg, guest_msg = ISSUE_MESSAGES[issue['code']]
+    return {'code': issue['code'],
+            'host_message': host_msg.format(detail=issue['detail'] or 'unknown error'),
+            'guest_message': guest_msg}
+
+
+def note_play_result(ok, err=None, device_id=None):
+    """Record the outcome of asking Spotify to play something."""
+    if ok:
+        _clear_issue(_PLAY_ISSUES)
+        return
+    text = str(err or '')
+    if device_id is None or 'NO_ACTIVE_DEVICE' in text or 'Device not found' in text:
+        _set_issue('no_device')
+    else:
+        _set_issue('play_failed', text[:120])
+
+
 # Latest known Spotify playback payload as (monotonic time, payload or None).
 # Without it every guest, TV and party-lights poll was its own Spotify call:
 # ~5 calls/s with a dozen phones, enough to draw 429s from Spotify.
@@ -178,6 +243,7 @@ def _start_fallback(device_id=None):
         playlist_id, device_id=device_id,
         shuffle=True, random_offset=True, track_count=meta['track_count'],
     )
+    note_play_result(ok, err, device_id)
     if ok:
         invalidate_playback_cache()
         logger.info(f"Queue empty — started fallback playlist ({meta['name']}).")
@@ -225,6 +291,7 @@ def _advance_to_next_pending():
     if pending:
         next_item = pending[0]
         ok, err = sc.play_track(f"spotify:track:{next_item['spotify_track_id']}", device_id=device_id)
+        note_play_result(ok, err, device_id)
         if ok:
             invalidate_playback_cache()
             db.update_queue_status(next_item['id'], 'playing')
@@ -284,6 +351,10 @@ def background_worker():
                 _store_snapshot(state['playback'])
 
             if state['status'] == sc.PLAYBACK_ERROR:
+                if state.get('reason') == 'not_authenticated':
+                    _set_issue('spotify_not_connected')
+                else:
+                    _set_issue('spotify_unreachable')
                 # We could not find out what Spotify is doing. Say nothing,
                 # change nothing, try again next tick. Treating this as "the
                 # song ended" is what used to skip a guest's song and burn it
@@ -298,6 +369,11 @@ def background_worker():
             if _last_playback_error:
                 logger.info("Spotify reachable again — resuming.")
             _last_playback_error = False
+            _clear_issue(_SPOTIFY_STATE_ISSUES)
+            pb = state['playback']
+            if pb and pb.get('is_playing'):
+                # Music is coming out of something, so any device problem is over.
+                _clear_issue(_PLAY_ISSUES)
 
             with _lock:
                 playback = state['playback']
@@ -309,6 +385,13 @@ def background_worker():
                     # forcing the fallback playlist back on.
                     if _current_spotify_track_id:
                         _finish_current_track()
+                        _advance_to_next_pending()
+                    elif (_playback_issue and _playback_issue['code'] in _PLAY_ISSUES
+                          and db.get_pending_queue()):
+                        # A song is waiting only because the last play attempt
+                        # failed (no device, Spotify said no). Retry each tick
+                        # so it starts once the host fixes things, instead of
+                        # sitting pending until another guest queues a song.
                         _advance_to_next_pending()
                 else:
                     spotify_track = playback['item']

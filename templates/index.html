@@ -32,6 +32,11 @@
     <span style="color:var(--warning);font-size:0.85rem">⚠ Spotify not connected — host needs to authorize at <a href="/host" style="color:var(--accent)">/host</a></span>
   </div>
 
+  <!-- Playback problem (no speaker, Spotify down) -->
+  <div id="playback-issue" class="card hidden" role="status" style="border-color:var(--warning);text-align:center">
+    <span id="playback-issue-text" style="color:var(--warning);font-size:0.85rem"></span>
+  </div>
+
   <!-- Join gate (shown until the guest has tonight's party code) -->
   <div id="join-gate" class="card hidden" style="text-align:center">
     <div class="section-header">

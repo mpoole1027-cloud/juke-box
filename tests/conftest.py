@@ -116,6 +116,7 @@ def _reset_rate_limits():
         qm_mod = sys.modules.get('queue_manager')
         if qm_mod is not None:
             qm_mod._snapshot = None
+            qm_mod._playback_issue = None
     reset()
     yield
     reset()
@@ -140,6 +141,7 @@ def qm(db, monkeypatch):
     monkeypatch.setattr(queue_manager, '_current_is_ours', False, raising=False)
     monkeypatch.setattr(queue_manager, '_standing_down', False, raising=False)
     monkeypatch.setattr(queue_manager, '_snapshot', None, raising=False)
+    monkeypatch.setattr(queue_manager, '_playback_issue', None, raising=False)
     queue_manager.note_activity()
     queue_manager.fake = fake
     return queue_manager

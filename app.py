@@ -236,6 +236,11 @@ def _resolve_current_track():
     return current_track, playing_queue_item, current_queue_id
 
 
+def _guest_issue():
+    issue = qm.get_playback_issue()
+    return {'code': issue['code'], 'message': issue['guest_message']} if issue else None
+
+
 UI_THEMES = ('modern', 'classic')
 
 
@@ -435,6 +440,7 @@ def api_status():
         } if user else None,
         'settings': settings,
         'spotify_connected': sc.is_authenticated(),
+        'playback_issue': _guest_issue(),
         'ui_theme': _ui_theme(),
     })
 
@@ -500,7 +506,8 @@ def api_queue():
         playback = sc.get_current_playback()
         if not playback or not playback.get('is_playing'):
             device_id = qm.get_party_device_id()
-            ok, _ = sc.play_track(f'spotify:track:{track_id}', device_id=device_id)
+            ok, err = sc.play_track(f'spotify:track:{track_id}', device_id=device_id)
+            qm.note_play_result(ok, err, device_id)
             if ok:
                 qm.invalidate_playback_cache()
                 db.update_queue_status(queue_id, 'playing')
@@ -844,6 +851,7 @@ def api_host_spotify_status():
         'fallback_playlist_url': (f'https://open.spotify.com/playlist/{fallback_id}'
                                   if fallback_id else ''),
         'standing_down': qm.is_standing_down(),
+        'playback_issue': qm.get_playback_issue(),
         'idle_shutdown_hours': int(db.get_setting('idle_shutdown_hours', '6')),
         'preferred_device_id': db.get_setting('preferred_device_id', ''),
     })
@@ -912,7 +920,8 @@ def api_host_queue():
         playback = sc.get_current_playback()
         if not playback or not playback.get('is_playing'):
             device_id = qm.get_party_device_id()
-            ok, _ = sc.play_track(f'spotify:track:{track_id}', device_id=device_id)
+            ok, err = sc.play_track(f'spotify:track:{track_id}', device_id=device_id)
+            qm.note_play_result(ok, err, device_id)
             if ok:
                 qm.invalidate_playback_cache()
                 db.update_queue_status(queue_id, 'playing')

@@ -431,6 +431,7 @@ function showJoinGate(show) {
     $('main-content').classList.add('hidden');
     $('ban-banner').classList.add('hidden');
     $('spotify-warning').classList.add('hidden');
+    $('playback-issue').classList.add('hidden');
     $('nickname-display').classList.add('hidden');
   } else {
     $('nickname-display').classList.remove('hidden');
@@ -489,6 +490,11 @@ async function pollStatus() {
     } else {
       $('spotify-warning').classList.add('hidden');
     }
+
+    // Playback problem notice (the host panel shows the details)
+    const issue = data.spotify_connected ? data.playback_issue : null;
+    $('playback-issue').classList.toggle('hidden', !issue);
+    $('playback-issue-text').textContent = issue ? '⏸ ' + issue.message : '';
 
   } catch (e) {
     console.error('Poll error:', e);

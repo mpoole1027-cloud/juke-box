@@ -170,6 +170,13 @@ async function loadSpotifyStatus() {
     const banner = $('standby-banner');
     if (banner) banner.classList.toggle('hidden', !data.standing_down);
 
+    const issueBanner = $('playback-issue-banner');
+    if (issueBanner) {
+      const issue = data.playback_issue;
+      issueBanner.classList.toggle('hidden', !issue);
+      issueBanner.textContent = issue ? '⚠ ' + issue.host_message : '';
+    }
+
     const sel = $('device-select');
     if (sel && document.activeElement !== sel) {
       try {
