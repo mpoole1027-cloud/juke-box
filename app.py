@@ -37,6 +37,20 @@ app.secret_key = os.environ.get('FLASK_SECRET_KEY') or _DEV_SECRET
 # Long enough that a guest who closes the tab keeps their identity all night.
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=3)
 
+# BEHIND_PROXY=1 when guests arrive through a tunnel or reverse proxy (e.g.
+# cloudflared). It trusts one hop of X-Forwarded-* so client IPs (rate limits)
+# and https URLs come out right, marks the session cookie Secure, and binds the
+# server to localhost so the proxy is the only way in.
+BEHIND_PROXY = os.environ.get('BEHIND_PROXY') == '1'
+if BEHIND_PROXY:
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    SESSION_COOKIE_SECURE=BEHIND_PROXY,
+)
+
 # ---------------------------------------------------------------------------
 # Rate limiting
 # ---------------------------------------------------------------------------
@@ -960,6 +974,13 @@ def create_app():
 
 
 if __name__ == '__main__':
+    from waitress import serve
+
     port = int(os.environ.get('PORT', 5000))
+    host = os.environ.get('HOST') or ('127.0.0.1' if BEHIND_PROXY else '0.0.0.0')
     create_app()
-    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+    # Exactly ONE process. queue_manager keeps playback state in memory and its
+    # worker thread must run once; a second process would fight it over
+    # Spotify. Scale with threads (guests mostly poll), never with workers.
+    logger.info("Serving on http://%s:%s (behind proxy: %s)", host, port, BEHIND_PROXY)
+    serve(app, host=host, port=port, threads=16, ident='jukebox')

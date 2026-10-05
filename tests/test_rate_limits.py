@@ -35,3 +35,21 @@ def test_search_limit_is_per_guest(app_module):
         assert a.get('/api/search?q=x').status_code == 200
     assert a.get('/api/search?q=x').status_code == 429
     assert b.get('/api/search?q=x').status_code == 200
+
+
+def test_proxy_fix_uses_the_forwarded_client_ip(monkeypatch):
+    """Behind cloudflared every request comes from 127.0.0.1; the limiter must
+    key on the real client from X-Forwarded-For instead."""
+    from flask import Flask, request
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    probe = Flask('probe')
+    probe.wsgi_app = ProxyFix(probe.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+    @probe.route('/ip')
+    def ip():
+        return f'{request.remote_addr} {request.scheme}'
+
+    # A client-supplied X-Forwarded-For is prepended to; only the last hop counts.
+    res = probe.test_client().get('/ip', headers={
+        'X-Forwarded-For': '127.0.0.1, 203.0.113.9', 'X-Forwarded-Proto': 'https'})
+    assert res.get_data(as_text=True) == '203.0.113.9 https'
