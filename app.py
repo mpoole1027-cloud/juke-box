@@ -11,7 +11,7 @@ from functools import wraps
 
 from flask import (
     Flask, render_template, request, jsonify,
-    session, redirect, url_for, send_file, make_response
+    session, redirect, url_for, send_file
 )
 from dotenv import load_dotenv
 from flask_limiter import Limiter
@@ -187,16 +187,6 @@ def party_links():
         'invite_url': f'{base}/?p={code}',
         'tv_url': f'{base}/tv?p={code}',
     }
-
-
-def get_or_init_playlist():
-    """Return the cached jukebox playlist_id, creating it if needed."""
-    playlist_id = db.get_setting('jukebox_playlist_id')
-    if not playlist_id:
-        playlist_id = sc.get_or_create_jukebox_playlist()
-        if playlist_id:
-            db.set_setting('jukebox_playlist_id', playlist_id)
-    return playlist_id
 
 
 def _resolve_current_track():
@@ -1044,10 +1034,10 @@ if __name__ == '__main__':
 
     # Not 5000: macOS's AirPlay Receiver listens there and answers 403.
     port = int(os.environ.get('PORT', 5001))
-    host = os.environ.get('HOST') or ('127.0.0.1' if BEHIND_PROXY else '0.0.0.0')
+    bind_host = os.environ.get('HOST') or ('127.0.0.1' if BEHIND_PROXY else '0.0.0.0')
     create_app()
     # Exactly ONE process. queue_manager keeps playback state in memory and its
     # worker thread must run once; a second process would fight it over
     # Spotify. Scale with threads (guests mostly poll), never with workers.
-    logger.info("Serving on http://%s:%s (behind proxy: %s)", host, port, BEHIND_PROXY)
-    serve(app, host=host, port=port, threads=16, ident='jukebox')
+    logger.info("Serving on http://%s:%s (behind proxy: %s)", bind_host, port, BEHIND_PROXY)
+    serve(app, host=bind_host, port=port, threads=16, ident='jukebox')

@@ -112,9 +112,10 @@ def init_db():
 
             # Insert default settings if not present
             defaults = [
-                ('downvote_threshold', '7'),
-                ('max_queue_per_user', '2'),
-                ('skip_ban_threshold', '2'),
+                # .env seeds these once; the host panel owns them after that.
+                ('downvote_threshold', os.environ.get('DOWNVOTE_THRESHOLD', '7')),
+                ('max_queue_per_user', os.environ.get('MAX_QUEUE_PER_USER', '2')),
+                ('skip_ban_threshold', os.environ.get('SKIP_BAN_THRESHOLD', '2')),
                 ('party_url', os.environ.get('PARTY_URL', 'http://localhost:5001')),
             ]
             for key, value in defaults:

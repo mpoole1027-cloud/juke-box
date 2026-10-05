@@ -19,8 +19,6 @@ SCOPES = (
     "streaming"
 )
 
-PLAYLIST_NAME = "🎃 Party Jukebox 🎃"
-
 
 def get_oauth(show_dialog=False):
     return SpotifyOAuth(
@@ -163,89 +161,6 @@ def play_track(track_uri, device_id=None):
     except Exception as e:
         logger.error(f"Error playing track: {e}")
         return False, str(e)
-
-
-def pause_playback(device_id=None):
-    sp = get_spotify()
-    if not sp:
-        return
-    try:
-        sp.pause_playback(device_id=device_id)
-    except Exception as e:
-        logger.error(f"Error pausing playback: {e}")
-
-
-def add_to_spotify_queue(track_uri, device_id=None):
-    sp = get_spotify()
-    if not sp:
-        return False, "Not authenticated with Spotify"
-    try:
-        sp.add_to_queue(track_uri, device_id=device_id)
-        return True, None
-    except Exception as e:
-        logger.error(f"Error adding to Spotify queue: {e}")
-        return False, str(e)
-
-
-def skip_track(device_id=None):
-    sp = get_spotify()
-    if not sp:
-        return False, "Not authenticated with Spotify"
-    try:
-        sp.next_track(device_id=device_id)
-        return True, None
-    except Exception as e:
-        logger.error(f"Error skipping track: {e}")
-        return False, str(e)
-
-
-def get_or_create_jukebox_playlist():
-    """Find our private jukebox playlist or create it. Returns playlist_id or None."""
-    sp = get_spotify()
-    if not sp:
-        return None
-    try:
-        user_id = sp.me()['id']
-        offset = 0
-        while True:
-            result = sp.current_user_playlists(limit=50, offset=offset)
-            for p in result['items']:
-                if p and p.get('name') == PLAYLIST_NAME:
-                    return p['id']
-            if not result['next']:
-                break
-            offset += 50
-        playlist = sp.user_playlist_create(
-            user_id, PLAYLIST_NAME, public=False,
-            description="Managed by Party Jukebox app — do not edit manually"
-        )
-        logger.info(f"Created jukebox playlist: {playlist['id']}")
-        return playlist['id']
-    except Exception as e:
-        logger.error(f"Error in get_or_create_jukebox_playlist: {e}")
-        return None
-
-
-def add_track_to_playlist(playlist_id, track_uri):
-    sp = get_spotify()
-    if not sp:
-        return False, "Not authenticated"
-    try:
-        sp.playlist_add_items(playlist_id, [track_uri])
-        return True, None
-    except Exception as e:
-        logger.error(f"Error adding track to playlist: {e}")
-        return False, str(e)
-
-
-def remove_track_from_playlist(playlist_id, track_uri):
-    sp = get_spotify()
-    if not sp:
-        return
-    try:
-        sp.playlist_remove_all_occurrences_of_items(playlist_id, [track_uri])
-    except Exception as e:
-        logger.error(f"Error removing track from playlist: {e}")
 
 
 def clear_jukebox_playlist(playlist_id):
