@@ -1,0 +1,68 @@
+"""Guest identity comes from the signed session cookie, never from the client."""
+import pytest
+
+
+@pytest.fixture
+def app_module(db, monkeypatch):
+    import app as app_module
+    monkeypatch.setattr(app_module.sc, 'is_authenticated', lambda: True)
+    monkeypatch.setattr(app_module.sc, 'get_current_playback', lambda: {'is_playing': True})
+    monkeypatch.setattr(app_module.sc, 'play_track', lambda *a, **k: (True, None))
+    return app_module
+
+
+def queue_song(client, track='t' * 22):
+    return client.post('/api/queue', json={
+        'track_id': track, 'track_name': 'Song', 'artist': 'Artist', 'duration_ms': 1000})
+
+
+def test_each_browser_gets_its_own_guest(app_module):
+    a = app_module.app.test_client()
+    b = app_module.app.test_client()
+    a.get('/')
+    b.get('/')
+    with a.session_transaction() as sa, b.session_transaction() as sb:
+        assert sa['guest_id'] and sb['guest_id'] and sa['guest_id'] != sb['guest_id']
+
+
+def test_header_cannot_pick_an_identity(app_module, db):
+    victim = app_module.app.test_client()
+    victim.get('/')
+    with victim.session_transaction() as s:
+        victim_id = s['guest_id']
+    assert queue_song(victim).status_code == 200
+    item = db.get_pending_queue()[0]
+
+    attacker = app_module.app.test_client()
+    res = attacker.delete(f"/api/queue/{item['id']}", headers={'X-User-ID': victim_id})
+    assert res.status_code == 403
+    assert db.get_pending_queue()
+
+
+def test_status_marks_only_my_songs_and_hides_ids(app_module):
+    me = app_module.app.test_client()
+    other = app_module.app.test_client()
+    me.get('/')
+    other.get('/')
+    queue_song(me, 'm' * 22)
+    queue_song(other, 'o' * 22)
+
+    queue = me.get('/api/status').get_json()['queue']
+    mine = {q['track_id']: q['is_mine'] for q in queue}
+    assert mine == {'m' * 22: True, 'o' * 22: False}
+    assert all('requested_by' not in q for q in queue)
+
+
+def test_cookieless_pollers_do_not_create_guests(app_module, db):
+    c = app_module.app.test_client(use_cookies=False)
+    for _ in range(5):
+        assert c.get('/api/status').status_code == 200
+    assert db.get_all_users() == []
+
+
+def test_ban_sticks_to_the_browser(app_module, db):
+    c = app_module.app.test_client()
+    c.get('/')
+    with c.session_transaction() as s:
+        db.ban_user(s['guest_id'])
+    assert queue_song(c).status_code == 403

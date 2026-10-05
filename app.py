@@ -6,6 +6,7 @@ import json
 import random
 import io
 import logging
+from datetime import timedelta
 from functools import wraps
 
 from flask import (
@@ -31,6 +32,8 @@ _PLACEHOLDER_SECRETS = (_DEV_SECRET, 'choose_a_long_random_string')
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY') or _DEV_SECRET
+# Long enough that a guest who closes the tab keeps their identity all night.
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=3)
 
 # ---------------------------------------------------------------------------
 # Nickname generation
@@ -75,8 +78,20 @@ def require_host(f):
     return decorated
 
 
-def get_user_id_from_request():
-    return request.headers.get('X-User-ID', '').strip()
+def get_user_id_from_request(create=True):
+    """The guest's ID, kept in the signed session cookie.
+
+    The server picks it, so a guest can't claim someone else's ID or mint a
+    fresh one to dodge a ban or stack votes the way a client-chosen header
+    allowed. Read-only callers pass create=False so pollers that don't keep
+    cookies (party-lights) don't mint a new guest on every request.
+    """
+    uid = session.get('guest_id')
+    if not uid and create:
+        uid = uuid.uuid4().hex
+        session['guest_id'] = uid
+        session.permanent = True
+    return uid or ''
 
 
 def get_or_init_playlist():
@@ -161,6 +176,7 @@ def _note_party_activity():
 # ---------------------------------------------------------------------------
 @app.route('/')
 def index():
+    get_or_create_user(get_user_id_from_request())
     return render_template('index.html', ui_theme=_ui_theme())
 
 
@@ -249,7 +265,7 @@ def host_auth_check():
 # ---------------------------------------------------------------------------
 @app.route('/api/status')
 def api_status():
-    user_id = get_user_id_from_request()
+    user_id = get_user_id_from_request(create=False)
     user = get_or_create_user(user_id) if user_id else None
 
     demo_mode = db.get_setting('demo_mode', '0') == '1'
@@ -285,12 +301,13 @@ def api_status():
         'queue': [
             {
                 'id': q['id'],
+                'track_id': q['spotify_track_id'],
                 'track_name': q['track_name'],
                 'artist': q['artist'],
                 'album_art': q['album_art'],
                 'duration_ms': q['duration_ms'],
                 'status': q['status'],
-                'requested_by': q['requested_by'],
+                'is_mine': bool(user_id) and q['requested_by'] == user_id,
                 'nickname': q['nickname'],
                 'dedication': q.get('dedication'),
                 'upvote_count': q['upvote_count'],
@@ -299,9 +316,8 @@ def api_status():
             for q in pending_queue
         ],
         'reactions': reactions,
-        'banned_users': banned_users,
+        'banned_users': [{'nickname': u['nickname']} for u in banned_users],
         'user': {
-            'user_id': user['user_id'],
             'nickname': user['nickname'],
             'is_banned': bool(user['is_banned']),
         } if user else None,
@@ -313,9 +329,6 @@ def api_status():
 
 @app.route('/api/search')
 def api_search():
-    user_id = get_user_id_from_request()
-    if user_id:
-        get_or_create_user(user_id)
 
     q = request.args.get('q', '').strip()
     if not q:

@@ -18,26 +18,13 @@ function applyTheme(theme) {
 // ----------------------------------------------------------------
 // User identity
 // ----------------------------------------------------------------
-function getUserId() {
-  let uid = localStorage.getItem('jukebox_user_id');
-  if (!uid) {
-    uid = crypto.randomUUID ? crypto.randomUUID() : generateUUID();
-    localStorage.setItem('jukebox_user_id', uid);
-  }
-  return uid;
-}
-
-function generateUUID() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-    const r = Math.random() * 16 | 0;
-    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-  });
-}
-
-const USER_ID = getUserId();
+// The server assigns each guest an ID in a signed session cookie, so the page
+// never sees or sends one. Clear the ID older versions kept here.
+try { localStorage.removeItem('jukebox_user_id'); } catch (e) {}
 
 function apiFetch(url, opts = {}) {
-  opts.headers = Object.assign({ 'X-User-ID': USER_ID, 'Content-Type': 'application/json' }, opts.headers || {});
+  opts.headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+  opts.credentials = 'same-origin';
   return fetch(url, opts);
 }
 
@@ -146,7 +133,7 @@ function renderQueue(queue) {
     return;
   }
   list.innerHTML = queue.map((item, i) => {
-    const isMine = item.requested_by === USER_ID;
+    const isMine = !!item.is_mine;
     const voted = !!item.user_has_upvoted;
     const count = item.upvote_count || 0;
     const nickname = item.nickname || 'someone';
@@ -410,12 +397,12 @@ function fireNotification(body) {
 
 function checkMySongTransitions(data) {
   const queue = Array.isArray(data.queue) ? data.queue : [];
-  const mine = queue.filter(it => it.requested_by === USER_ID);
+  const mine = queue.filter(it => it.is_mine);
   const myIdsNow = new Set(mine.map(it => it.track_id));
 
   // "Up next": one of my songs is now first in line and wasn't announced yet.
   const first = queue[0];
-  if (first && first.requested_by === USER_ID && !firedUpNext.has(first.track_id)) {
+  if (first && first.is_mine && !firedUpNext.has(first.track_id)) {
     firedUpNext.add(first.track_id);
     showToast("🔔 You're up next!");
     fireNotification("You're up next — get ready!");
