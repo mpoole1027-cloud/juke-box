@@ -103,6 +103,19 @@ class FakeSpotify:
         return self.devices[0]['id'] if self.devices else None
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limits():
+    """Limiter counters are process-global; don't let one test's requests
+    count against the next."""
+    def reset():
+        mod = sys.modules.get('app')
+        if mod is not None:
+            mod.limiter.reset()
+    reset()
+    yield
+    reset()
+
+
 @pytest.fixture
 def db(monkeypatch):
     import database

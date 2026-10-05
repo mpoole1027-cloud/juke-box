@@ -14,6 +14,8 @@ from flask import (
     session, redirect, url_for, send_file, make_response
 )
 from dotenv import load_dotenv
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 load_dotenv()
 
@@ -34,6 +36,26 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY') or _DEV_SECRET
 # Long enough that a guest who closes the tab keeps their identity all night.
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=3)
+
+# ---------------------------------------------------------------------------
+# Rate limiting
+# ---------------------------------------------------------------------------
+# In-memory counters are fine: the app runs as exactly one process (see the
+# bottom of this file). Guests are counted per browser; logins and joins per IP,
+# since those are what a password- or code-guesser would hammer.
+def _rate_key():
+    return session.get('guest_id') or get_remote_address()
+
+
+limiter = Limiter(key_func=_rate_key, app=app, storage_uri='memory://',
+                  default_limits=[], headers_enabled=True)
+
+
+@app.errorhandler(429)
+def _rate_limited(e):
+    return jsonify({'error': 'Slow down a little and try again in a minute.',
+                    'code': 'rate_limited'}), 429
+
 
 # ---------------------------------------------------------------------------
 # Nickname generation
@@ -242,6 +264,7 @@ def tv():
 
 
 @app.route('/api/join', methods=['POST'])
+@limiter.limit('10 per minute', key_func=get_remote_address)
 def api_join():
     """Manual entry of the party code, for guests who can't scan the QR."""
     data = request.get_json() or {}
@@ -302,6 +325,7 @@ def auth_callback():
 # Host login / logout
 # ---------------------------------------------------------------------------
 @app.route('/api/host/login', methods=['POST'])
+@limiter.limit('5 per minute;30 per hour', key_func=get_remote_address)
 def host_login():
     data = request.get_json() or {}
     password = data.get('password', '')
@@ -402,6 +426,7 @@ def api_status():
 
 
 @app.route('/api/search')
+@limiter.limit('30 per minute')
 @require_party
 def api_search():
 
@@ -417,6 +442,7 @@ def api_search():
 
 
 @app.route('/api/queue', methods=['POST'])
+@limiter.limit('10 per minute')
 @require_party
 def api_queue():
     user_id = get_user_id_from_request()
@@ -468,6 +494,7 @@ def api_queue():
 
 
 @app.route('/api/downvote', methods=['POST'])
+@limiter.limit('20 per minute')
 @require_party
 def api_downvote():
     user_id = get_user_id_from_request()
@@ -512,6 +539,7 @@ def api_downvote():
 
 
 @app.route('/api/react', methods=['POST'])
+@limiter.limit('40 per minute')
 @require_party
 def api_react():
     user_id = get_user_id_from_request()
@@ -533,6 +561,7 @@ def api_react():
 
 
 @app.route('/api/user/nickname', methods=['POST'])
+@limiter.limit('10 per minute')
 @require_party
 def api_set_nickname():
     user_id = get_user_id_from_request()
@@ -554,6 +583,7 @@ def api_set_nickname():
 
 
 @app.route('/api/upvote', methods=['POST'])
+@limiter.limit('30 per minute')
 @require_party
 def api_upvote():
     user_id = get_user_id_from_request()
@@ -582,6 +612,7 @@ def api_upvote():
 
 
 @app.route('/api/queue/<int:queue_id>', methods=['DELETE'])
+@limiter.limit('20 per minute')
 @require_party
 def api_remove_queue_item(queue_id):
     user_id = get_user_id_from_request()
