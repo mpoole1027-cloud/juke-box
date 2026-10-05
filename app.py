@@ -373,12 +373,9 @@ def api_status():
     if not has_party_access():
         # Outsiders (and cookieless local pollers like party-lights) see only
         # what's playing: no queue, nicknames, dedications or settings.
-        track, _, _ = _resolve_current_track()
-        public_track = ({k: track.get(k) for k in ('track_id', 'track_name', 'artist', 'is_playing')}
-                        if track else None)
         return jsonify({
             'party_code_required': True,
-            'current_track': public_track,
+            'current_track': api_now().get_json()['current_track'],
             'ui_theme': _ui_theme(),
         })
 
@@ -443,6 +440,39 @@ def api_status():
         'playback_issue': _guest_issue(),
         'ui_theme': _ui_theme(),
     })
+
+
+@app.route('/api/now')
+def api_now():
+    """What's playing, for local integrations like party-lights. No party code
+    needed and nothing beyond the track; same shape as /api/status's
+    current_track. Served from the playback snapshot, so polling it is cheap."""
+    track, _, _ = _resolve_current_track()
+    return jsonify({'current_track': (
+        {k: track.get(k) for k in ('track_id', 'track_name', 'artist', 'is_playing')}
+        if track else None)})
+
+
+@app.route('/healthz')
+def healthz():
+    """Liveness for the preflight script and uptime checks. 503 when the app
+    can't do its job (database unreadable or the queue worker died)."""
+    try:
+        db.get_setting('party_code')
+        db_ok = True
+    except Exception:
+        db_ok = False
+    worker_ok = qm.worker_alive()
+    issue = qm.get_playback_issue()
+    ok = db_ok and worker_ok
+    return jsonify({
+        'ok': ok,
+        'database': db_ok,
+        'queue_worker': worker_ok,
+        'spotify_connected': sc.is_authenticated(),
+        'standing_down': qm.is_standing_down(),
+        'playback_issue': issue['code'] if issue else None,
+    }), 200 if ok else 503
 
 
 @app.route('/api/search')

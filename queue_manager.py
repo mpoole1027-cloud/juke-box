@@ -467,10 +467,19 @@ def background_worker():
     logger.info("Queue manager background thread stopped.")
 
 
+_worker_thread = None
+
+
 def start_background_thread():
+    global _worker_thread
     t = threading.Thread(target=background_worker, daemon=True, name="QueueManager")
     t.start()
+    _worker_thread = t
     return t
+
+
+def worker_alive():
+    return _worker_thread is not None and _worker_thread.is_alive()
 
 
 def stop_background_thread():
