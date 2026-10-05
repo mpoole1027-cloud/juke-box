@@ -83,6 +83,62 @@ def check_jukebox():
     return health
 
 
+AGENTS = {
+    'com.partyjukebox.app': ('jukebox', 'jukebox.log'),
+    'com.partyjukebox.tunnel': ('tunnel', 'tunnel.log'),
+    'com.partyjukebox.lights': ('party-lights', 'party-lights.log'),
+}
+
+
+def agent_status(label):
+    """(installed, running, last_exit) for a launchd agent in the user's domain."""
+    out = subprocess.run(['launchctl', 'print', f'gui/{os.getuid()}/{label}'],
+                         capture_output=True, text=True).stdout
+    if not out:
+        return False, False, None
+    running = any(line.strip() == 'state = running' for line in out.splitlines())
+    last_exit = next((line.split('=', 1)[1].strip() for line in out.splitlines()
+                      if line.strip().startswith('last exit code')), None)
+    return True, running, last_exit
+
+
+def last_log_line(name):
+    try:
+        with open(os.path.join(ROOT, 'logs', name), errors='replace') as f:
+            lines = [ln.strip() for ln in f if ln.strip()]
+        return lines[-1][:160] if lines else ''
+    except OSError:
+        return ''
+
+
+def check_services():
+    print('Background services')
+    plists = os.path.expanduser('~/Library/LaunchAgents')
+    any_installed = False
+    for label, (name, log) in AGENTS.items():
+        if not os.path.exists(os.path.join(plists, f'{label}.plist')):
+            continue
+        any_installed = True
+        installed, running, last_exit = agent_status(label)
+        if running:
+            ok(f'{name} running')
+        elif not installed:
+            bad(f'{name} is installed but not loaded. Re-run deploy/install.sh')
+        else:
+            bad(f'{name} keeps exiting (code {last_exit}). Last log line: '
+                f'{last_log_line(log) or "(empty)"}')
+    if not any_installed:
+        warn('None installed; everything runs only while its terminal is open. '
+             'See deploy/README.md')
+
+    # Two jukeboxes means two queue managers fighting over Spotify.
+    out = subprocess.run(['lsof', '-t', '-nP', f'-iTCP:{PORT}', '-sTCP:LISTEN'],
+                         capture_output=True, text=True).stdout.split()
+    if len(set(out)) > 1:
+        bad(f'{len(set(out))} processes are listening on port {PORT}. Stop the one '
+            'you started by hand (Ctrl+C in its terminal).')
+
+
 def check_spotify_devices():
     print('Spotify device')
     try:
@@ -210,6 +266,7 @@ def check_power():
 def main():
     print('Party preflight\n')
     check_jukebox()
+    check_services()
     check_spotify_devices()
     check_public_link()
     check_audio()

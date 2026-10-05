@@ -36,6 +36,9 @@ if [ "$WITH_TUNNEL" = 1 ]; then
   [ -n "$CLOUDFLARED" ] || fail "cloudflared not found. Install it: brew install cloudflared"
   [ -f "$JUKEBOX_DIR/deploy/cloudflared/config.yml" ] ||
     fail "No deploy/cloudflared/config.yml. Copy config.yml.example and fill it in (see deploy/README.md)."
+  if grep -qE '<TUNNEL-UUID>|<you>|party\.example\.com' "$JUKEBOX_DIR/deploy/cloudflared/config.yml"; then
+    fail "deploy/cloudflared/config.yml still has placeholders. Fill in the tunnel UUID, credentials path and hostname (cloudflared tunnel list shows the UUID)."
+  fi
 fi
 
 if [ "$WITH_LIGHTS" = 1 ]; then
@@ -44,6 +47,19 @@ if [ "$WITH_LIGHTS" = 1 ]; then
 fi
 
 mkdir -p "$AGENTS" "$JUKEBOX_DIR/logs"
+
+# A jukebox started by hand would hold the port, and two queue managers would
+# fight over Spotify. Refuse unless the port belongs to our own launchd job.
+PORT="$(grep -E '^PORT=' "$JUKEBOX_DIR/.env" | tail -1 | cut -d= -f2 | tr -d '[:space:]"')"
+PORT="${PORT:-5001}"
+OWN_PID="$(launchctl print "$DOMAIN/com.partyjukebox.app" 2>/dev/null | awk '/^\tpid =/{print $3}')"
+for pid in $(lsof -t -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null); do
+  # The launchd job runs python under caffeinate, so compare parent PIDs too.
+  ppid="$(ps -o ppid= -p "$pid" | tr -d ' ')"
+  if [ "$pid" != "$OWN_PID" ] && [ "$ppid" != "$OWN_PID" ]; then
+    fail "Port $PORT is already in use by PID $pid ($(ps -o command= -p "$pid" | cut -c1-60)). If that's a jukebox you started by hand, stop it (Ctrl+C in its terminal) and re-run."
+  fi
+done
 
 install_agent() {
   local name="$1"
@@ -55,9 +71,18 @@ install_agent() {
       -e "s|__BEHIND_PROXY__|$WITH_TUNNEL|g" \
       "$src" > "$dst"
   plutil -lint "$dst" >/dev/null
-  # Reload cleanly if it was already installed.
-  launchctl bootout "$DOMAIN/$name" 2>/dev/null || true
-  launchctl bootstrap "$DOMAIN" "$dst"
+  # Reload cleanly if it was already installed. bootout returns before launchd
+  # has finished removing the job, and bootstrapping the same label too soon
+  # fails with "Bootstrap failed: 5: Input/output error", so wait for it.
+  if launchctl print "$DOMAIN/$name" >/dev/null 2>&1; then
+    launchctl bootout "$DOMAIN/$name" 2>/dev/null || true
+    for _ in $(seq 1 50); do
+      launchctl print "$DOMAIN/$name" >/dev/null 2>&1 || break
+      sleep 0.2
+    done
+  fi
+  launchctl bootstrap "$DOMAIN" "$dst" ||
+    fail "Couldn't start $name. Re-run deploy/install.sh; if it fails again, see logs/."
   echo "✓ $name"
 }
 
