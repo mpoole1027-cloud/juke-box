@@ -32,6 +32,11 @@
     <span style="color:var(--warning);font-size:0.85rem">⚠ Spotify not connected — host needs to authorize at <a href="/host" style="color:var(--accent)">/host</a></span>
   </div>
 
+  <!-- Lost connection to the jukebox -->
+  <div id="offline-banner" class="card hidden" role="status" style="border-color:var(--warning);text-align:center">
+    <span style="color:var(--warning);font-size:0.85rem">Can't reach the jukebox. Check your connection; retrying automatically.</span>
+  </div>
+
   <!-- Playback problem (no speaker, Spotify down) -->
   <div id="playback-issue" class="card hidden" role="status" style="border-color:var(--warning);text-align:center">
     <span id="playback-issue-text" style="color:var(--warning);font-size:0.85rem"></span>

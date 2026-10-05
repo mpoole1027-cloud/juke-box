@@ -22,10 +22,17 @@ function applyTheme(theme) {
 // never sees or sends one. Clear the ID older versions kept here.
 try { localStorage.removeItem('jukebox_user_id'); } catch (e) {}
 
-function apiFetch(url, opts = {}) {
+async function apiFetch(url, opts = {}) {
   opts.headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
   opts.credentials = 'same-origin';
-  return fetch(url, opts);
+  const res = await fetch(url, opts);
+  if (res.status === 403) {
+    // The party code expired (host started a new party): back to the join form.
+    res.clone().json().then(d => {
+      if (d && d.code === 'party_code_required') showJoinGate(true);
+    }).catch(() => {});
+  }
+  return res;
 }
 
 // ----------------------------------------------------------------
@@ -126,6 +133,11 @@ function renderNowPlaying(track, queueId, downvoteCount, userDownvoted, reaction
   $('heart-count').textContent = reactions.heart || 0;
 }
 
+function etaText(ms) {
+  if (typeof ms !== 'number' || ms < 45000) return 'your song · up next';
+  return `your song · plays in about ${Math.round(ms / 60000)} min`;
+}
+
 function renderQueue(queue) {
   const list = $('queue-list');
   if (!queue || queue.length === 0) {
@@ -151,6 +163,7 @@ function renderQueue(queue) {
         <div class="queue-item-title">${escHtml(item.track_name)}</div>
         <div class="queue-item-artist">${escHtml(item.artist)}</div>
         <div class="queue-requester">added by ${escHtml(nickname)}</div>
+        ${isMine ? `<div class="queue-requester">${etaText(item.eta_ms)}</div>` : ''}
         ${dedication}
       </div>
       <div class="queue-actions">
@@ -457,11 +470,36 @@ $('join-form').addEventListener('submit', async e => {
   }
 });
 
+// Polls every 3 s while the page is visible, pauses in a background tab, and
+// backs off (up to 30 s) while the jukebox is unreachable.
+const POLL_MS = 3000;
+let pollTimer = null;
+let pollFailures = 0;
+
+function schedulePoll() {
+  clearTimeout(pollTimer);
+  if (document.hidden) return;
+  const delay = pollFailures ? Math.min(30000, POLL_MS * 2 ** pollFailures) : POLL_MS;
+  pollTimer = setTimeout(pollStatus, delay);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) clearTimeout(pollTimer);
+  else pollStatus();
+});
+
+function setOffline(offline) {
+  $('offline-banner').classList.toggle('hidden', !offline);
+}
+
 async function pollStatus() {
+  clearTimeout(pollTimer);
   try {
     const res = await apiFetch('/api/status');
-    if (!res.ok) return;
+    if (!res.ok) throw new Error('status ' + res.status);
     const data = await res.json();
+    pollFailures = 0;
+    setOffline(false);
     if (data.party_code_required) {
       showJoinGate(true);
       return;
@@ -497,7 +535,11 @@ async function pollStatus() {
     $('playback-issue-text').textContent = issue ? '⏸ ' + issue.message : '';
 
   } catch (e) {
+    pollFailures++;
+    if (pollFailures >= 2) setOffline(true);
     console.error('Poll error:', e);
+  } finally {
+    schedulePoll();
   }
 }
 
@@ -725,4 +767,3 @@ document.addEventListener('click', e => {
 // Start polling
 // ----------------------------------------------------------------
 pollStatus();
-setInterval(pollStatus, 3000);

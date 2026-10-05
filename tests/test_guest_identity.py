@@ -73,3 +73,16 @@ def test_ban_sticks_to_the_browser(app_module, db):
     res = queue_song(c, 'y' * 22)
     assert res.status_code == 403
     assert 'banned' in res.get_json()['error']
+
+
+def test_queue_shows_each_songs_wait(app_module, db, monkeypatch):
+    monkeypatch.setattr(app_module.qm, 'get_cached_playback', lambda: {
+        'is_playing': True, 'progress_ms': 60_000,
+        'item': {'id': 'c' * 22, 'name': 'Now', 'artists': [{'name': 'B'}],
+                 'album': {'images': []}, 'duration_ms': 180_000}})
+    c = join(app_module)
+    for t, dur in (('1' * 22, 200_000), ('2' * 22, 100_000)):
+        c.post('/api/queue', json={'track_id': t, 'track_name': 'S', 'artist': 'A',
+                                   'duration_ms': dur})
+    queue = c.get('/api/status').get_json()['queue']
+    assert [q['eta_ms'] for q in queue] == [120_000, 320_000]

@@ -412,6 +412,14 @@ def api_status():
             user_has_downvoted = db.user_has_downvoted(current_queue_id, user_id)
 
     pending_queue = db.get_pending_queue()
+    # Rough wait for each queued song: what's left of the current track plus
+    # everything ahead of it.
+    etas, wait_ms = [], 0
+    if current_track and current_track.get('duration_ms'):
+        wait_ms = max(0, current_track['duration_ms'] - (current_track.get('progress_ms') or 0))
+    for q in pending_queue:
+        etas.append(wait_ms)
+        wait_ms += q['duration_ms'] or 0
     # Reaction counts for the CURRENT song only (fall back to global if none).
     reactions = db.get_reaction_counts(current_queue_id) if current_queue_id else db.get_reaction_counts()
     banned_users = db.get_banned_users()
@@ -442,8 +450,9 @@ def api_status():
                 'dedication': q.get('dedication'),
                 'upvote_count': q['upvote_count'],
                 'user_has_upvoted': db.user_has_upvoted(q['id'], user_id) if user_id else False,
+                'eta_ms': eta,
             }
-            for q in pending_queue
+            for q, eta in zip(pending_queue, etas)
         ],
         'reactions': reactions,
         'banned_users': [{'nickname': u['nickname']} for u in banned_users],
