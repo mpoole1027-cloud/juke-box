@@ -23,8 +23,14 @@ import queue_manager as qm
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# JUKEBOX_DEV=1 relaxes the startup checks below for local hacking. Never set
+# it on a machine guests can reach.
+DEV_MODE = os.environ.get('JUKEBOX_DEV') == '1'
+_DEV_SECRET = 'dev-secret-change-me'
+_PLACEHOLDER_SECRETS = (_DEV_SECRET, 'choose_a_long_random_string')
+
 app = Flask(__name__)
-app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-change-me')
+app.secret_key = os.environ.get('FLASK_SECRET_KEY') or _DEV_SECRET
 
 # ---------------------------------------------------------------------------
 # Nickname generation
@@ -60,14 +66,10 @@ def get_or_create_user(user_id):
 
 
 def require_host(f):
-    """Decorator: requires either a valid host session or X-Host-Password header."""
+    """Decorator: requires a host session (set by /api/host/login)."""
     @wraps(f)
     def decorated(*args, **kwargs):
         if session.get('is_host'):
-            return f(*args, **kwargs)
-        header_pw = request.headers.get('X-Host-Password', '')
-        stored_pw = db.get_setting('host_password', 'party2024')
-        if header_pw == stored_pw:
             return f(*args, **kwargs)
         return jsonify({'error': 'Unauthorized'}), 401
     return decorated
@@ -225,8 +227,7 @@ def auth_callback():
 def host_login():
     data = request.get_json() or {}
     password = data.get('password', '')
-    stored_pw = db.get_setting('host_password', 'party2024')
-    if password == stored_pw:
+    if db.check_host_password(password):
         session['is_host'] = True
         return jsonify({'success': True})
     return jsonify({'error': 'Invalid password'}), 401
@@ -602,7 +603,11 @@ def api_host_settings():
     if 'host_password' in data:
         pw = data['host_password'].strip()
         if pw:
-            db.set_setting('host_password', pw)
+            if len(pw) < 8:
+                return jsonify({'error': 'Host password must be at least 8 characters.'}), 400
+            if pw in db.PLACEHOLDER_HOST_PASSWORDS:
+                return jsonify({'error': 'Pick a password other than the default.'}), 400
+            db.set_host_password(pw)
             session['is_host'] = True  # keep session valid after pw change
 
     if 'party_url' in data:
@@ -800,8 +805,29 @@ def api_host_demo():
 # ---------------------------------------------------------------------------
 # Bootstrap
 # ---------------------------------------------------------------------------
+def config_problems():
+    """Settings that are fine on a laptop but unsafe once guests can reach the app."""
+    problems = []
+    secret = os.environ.get('FLASK_SECRET_KEY', '')
+    if not secret or secret in _PLACEHOLDER_SECRETS or len(secret) < 32:
+        problems.append(
+            "FLASK_SECRET_KEY is missing or too short; anyone could forge a host "
+            "session. Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\"")
+    if db.host_password_is_placeholder():
+        problems.append(
+            "The host password is still the default. Set HOST_PASSWORD in .env "
+            "(or change it in the host panel).")
+    return problems
+
+
 def create_app():
     db.init_db()
+    problems = config_problems()
+    for p in problems:
+        logger.warning(p)
+    if problems and not DEV_MODE:
+        raise SystemExit("Refusing to start with unsafe settings (set JUKEBOX_DEV=1 "
+                         "to override on a private machine).")
     qm.start_background_thread()
     return app
 

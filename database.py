@@ -2,8 +2,15 @@ import sqlite3
 import threading
 import os
 
+from werkzeug.security import generate_password_hash, check_password_hash
+
 DB_PATH = os.path.join(os.path.dirname(__file__), 'jukebox.db')
 _db_lock = threading.Lock()
+
+# Passwords that must never guard a public party: the old built-in default and
+# the .env.example placeholder.
+DEFAULT_HOST_PASSWORD = 'party2024'
+PLACEHOLDER_HOST_PASSWORDS = (DEFAULT_HOST_PASSWORD, 'choose_a_password')
 
 
 def get_connection():
@@ -107,7 +114,6 @@ def init_db():
                 ('downvote_threshold', '7'),
                 ('max_queue_per_user', '2'),
                 ('skip_ban_threshold', '2'),
-                ('host_password', os.environ.get('HOST_PASSWORD', 'party2024')),
                 ('party_url', os.environ.get('PARTY_URL', 'http://localhost:5000')),
             ]
             for key, value in defaults:
@@ -115,9 +121,55 @@ def init_db():
                     "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
                     (key, value)
                 )
+            _ensure_host_password_hash(cursor)
             conn.commit()
         finally:
             conn.close()
+
+
+def _ensure_host_password_hash(cursor):
+    """Keep the host password only as a hash, migrating any plaintext copy.
+
+    HOST_PASSWORD seeds the hash once; after that the host panel owns it. The
+    exception is a hash that still matches the built-in default: a real
+    HOST_PASSWORD then replaces it, so setting the env var is always enough to
+    get off the default.
+    """
+    def value(key):
+        row = cursor.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else None
+
+    stored = value('host_password_hash')
+    legacy = value('host_password')
+    env_pw = os.environ.get('HOST_PASSWORD', '').strip()
+
+    seed = None
+    if stored is None:
+        if legacy and legacy != DEFAULT_HOST_PASSWORD:
+            seed = legacy
+        else:
+            seed = env_pw or legacy or DEFAULT_HOST_PASSWORD
+    elif env_pw and check_password_hash(stored, DEFAULT_HOST_PASSWORD):
+        seed = env_pw
+
+    if seed:
+        cursor.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('host_password_hash', ?)",
+            (generate_password_hash(seed),))
+    cursor.execute("DELETE FROM settings WHERE key = 'host_password'")
+
+
+def check_host_password(password):
+    stored = get_setting('host_password_hash')
+    return bool(stored and password) and check_password_hash(stored, password)
+
+
+def set_host_password(password):
+    set_setting('host_password_hash', generate_password_hash(password))
+
+
+def host_password_is_placeholder():
+    return any(check_host_password(pw) for pw in PLACEHOLDER_HOST_PASSWORDS)
 
 
 def get_setting(key, default=None):
