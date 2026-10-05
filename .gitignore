@@ -7,3 +7,6 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+jukebox.db-shm
+jukebox.db-wal
+logs/
