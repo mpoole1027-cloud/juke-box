@@ -201,7 +201,7 @@ def _resolve_current_track():
         except Exception:
             current_track = None
     else:
-        playback = sc.get_current_playback()
+        playback = qm.get_cached_playback()
         if playback and playback.get('item'):
             item = playback['item']
             current_track = {
@@ -502,6 +502,7 @@ def api_queue():
             device_id = qm.get_party_device_id()
             ok, _ = sc.play_track(f'spotify:track:{track_id}', device_id=device_id)
             if ok:
+                qm.invalidate_playback_cache()
                 db.update_queue_status(queue_id, 'playing')
 
     return jsonify({'success': True, 'queue_id': queue_id})
@@ -913,6 +914,7 @@ def api_host_queue():
             device_id = qm.get_party_device_id()
             ok, _ = sc.play_track(f'spotify:track:{track_id}', device_id=device_id)
             if ok:
+                qm.invalidate_playback_cache()
                 db.update_queue_status(queue_id, 'playing')
 
     return jsonify({'success': True, 'queue_id': queue_id})

@@ -11,6 +11,11 @@ logger = logging.getLogger(__name__)
 # mid-track" without relying on the overloaded is_playing flag alone.
 END_THRESHOLD_MS = 3000
 
+# How often the worker reads Spotify. It is also the freshness of what every
+# page shows, since request threads read the worker's snapshot (see
+# get_cached_playback) instead of calling Spotify themselves.
+POLL_SECONDS = 3
+
 _lock = threading.Lock()
 _current_spotify_track_id = None
 _last_playing_queue_id = None
@@ -27,6 +32,45 @@ _last_activity = time.monotonic()
 _standing_down = False
 # Tracks whether we're mid-outage, so the warning logs once, not every tick.
 _last_playback_error = False
+
+# Latest known Spotify playback payload as (monotonic time, payload or None).
+# Without it every guest, TV and party-lights poll was its own Spotify call:
+# ~5 calls/s with a dozen phones, enough to draw 429s from Spotify.
+_snapshot = None
+_snapshot_lock = threading.Lock()
+_fetch_lock = threading.Lock()
+
+
+def _store_snapshot(playback):
+    global _snapshot
+    with _snapshot_lock:
+        _snapshot = (time.monotonic(), playback)
+
+
+def invalidate_playback_cache():
+    """Call after changing what Spotify plays, so pages don't show the old song."""
+    global _snapshot
+    with _snapshot_lock:
+        _snapshot = None
+
+
+def get_cached_playback(max_age=POLL_SECONDS + 1):
+    """What Spotify is playing, at most max_age seconds old.
+
+    Normally the worker keeps this fresh. When it isn't polling (standing down,
+    or between ticks after an invalidation), the first request thread through
+    refreshes it and concurrent ones wait for and reuse that one result.
+    """
+    snap = _snapshot
+    if snap and time.monotonic() - snap[0] <= max_age:
+        return snap[1]
+    with _fetch_lock:
+        snap = _snapshot
+        if snap and time.monotonic() - snap[0] <= max_age:
+            return snap[1]
+        playback = sc.get_current_playback()
+        _store_snapshot(playback)
+        return playback
 
 
 def note_activity():
@@ -135,6 +179,7 @@ def _start_fallback(device_id=None):
         shuffle=True, random_offset=True, track_count=meta['track_count'],
     )
     if ok:
+        invalidate_playback_cache()
         logger.info(f"Queue empty — started fallback playlist ({meta['name']}).")
         # Whatever plays now is not one of ours, so it must not be recorded as
         # played (see _finish_current_track).
@@ -181,6 +226,7 @@ def _advance_to_next_pending():
         next_item = pending[0]
         ok, err = sc.play_track(f"spotify:track:{next_item['spotify_track_id']}", device_id=device_id)
         if ok:
+            invalidate_playback_cache()
             db.update_queue_status(next_item['id'], 'playing')
             _current_spotify_track_id = next_item['spotify_track_id']
             _last_playing_queue_id = next_item['id']
@@ -234,6 +280,8 @@ def background_worker():
             # Fetched outside _lock: it's a network round-trip, and holding
             # the lock across it stalls every request thread.
             state = sc.get_playback_state()
+            if state['status'] != sc.PLAYBACK_ERROR:
+                _store_snapshot(state['playback'])
 
             if state['status'] == sc.PLAYBACK_ERROR:
                 # We could not find out what Spotify is doing. Say nothing,
@@ -244,7 +292,7 @@ def background_worker():
                     logger.warning("Spotify state unavailable (%s) — holding position.",
                                    state.get('reason', 'unknown'))
                 _last_playback_error = True
-                _stop_event.wait(5)
+                _stop_event.wait(POLL_SECONDS)
                 continue
 
             if _last_playback_error:
@@ -331,7 +379,7 @@ def background_worker():
         except Exception as e:
             logger.error(f"Background worker error: {e}", exc_info=True)
 
-        _stop_event.wait(5)
+        _stop_event.wait(POLL_SECONDS)
 
     logger.info("Queue manager background thread stopped.")
 
