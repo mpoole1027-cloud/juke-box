@@ -23,7 +23,23 @@ import database as db
 import spotify_client as sc
 import queue_manager as qm
 
-logging.basicConfig(level=logging.INFO)
+def _configure_logging():
+    """Log to stderr, or with LOG_FILE set (as under launchd) to a rotating file
+    so a long-running party machine never fills its disk. stderr then only
+    catches crashes before logging starts."""
+    handlers = []
+    log_file = os.environ.get('LOG_FILE')
+    if log_file:
+        from logging.handlers import RotatingFileHandler
+        os.makedirs(os.path.dirname(os.path.abspath(log_file)), exist_ok=True)
+        handlers.append(RotatingFileHandler(log_file, maxBytes=5_000_000, backupCount=5))
+    else:
+        handlers.append(logging.StreamHandler())
+    logging.basicConfig(level=logging.INFO, handlers=handlers,
+                        format='%(asctime)s %(levelname)s %(name)s: %(message)s')
+
+
+_configure_logging()
 logger = logging.getLogger(__name__)
 
 # JUKEBOX_DEV=1 relaxes the startup checks below for local hacking. Never set
@@ -162,7 +178,7 @@ def _accept_party_code(raw):
 
 def party_links():
     """Invite and TV links for the host panel. The code rides in the query string."""
-    party_url = db.get_setting('party_url', os.environ.get('PARTY_URL', 'http://localhost:5000'))
+    party_url = db.get_setting('party_url', os.environ.get('PARTY_URL', 'http://localhost:5001'))
     base = party_url.rstrip('/')
     code = db.get_setting('party_code', '')
     return {
@@ -1017,7 +1033,8 @@ def create_app():
 if __name__ == '__main__':
     from waitress import serve
 
-    port = int(os.environ.get('PORT', 5000))
+    # Not 5000: macOS's AirPlay Receiver listens there and answers 403.
+    port = int(os.environ.get('PORT', 5001))
     host = os.environ.get('HOST') or ('127.0.0.1' if BEHIND_PROXY else '0.0.0.0')
     create_app()
     # Exactly ONE process. queue_manager keeps playback state in memory and its

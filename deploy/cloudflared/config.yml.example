@@ -1,0 +1,11 @@
+# Copy to deploy/cloudflared/config.yml and fill in the three placeholders.
+# `cloudflared tunnel create party-jukebox` prints the tunnel UUID and writes
+# the credentials file; see deploy/README.md for the full setup.
+tunnel: <TUNNEL-UUID>
+credentials-file: /Users/<you>/.cloudflared/<TUNNEL-UUID>.json
+
+ingress:
+  # The jukebox listens only on localhost when BEHIND_PROXY=1. Match PORT in .env.
+  - hostname: party.example.com
+    service: http://127.0.0.1:5001
+  - service: http_status:404

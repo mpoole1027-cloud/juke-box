@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: deploy/install.sh fills in __LIGHTS_DIR__ and __JUKEBOX_DIR__.
+     Optional (install.sh --with-lights). macOS may need to grant this Python
+     microphone access before it can read BlackHole; see deploy/README.md. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.partyjukebox.lights</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__LIGHTS_DIR__/.venv/bin/python</string>
+    <string>-m</string>
+    <string>partylights.cli</string>
+    <string>run</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__LIGHTS_DIR__</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>StandardOutPath</key>
+  <string>__JUKEBOX_DIR__/logs/party-lights.log</string>
+  <key>StandardErrorPath</key>
+  <string>__JUKEBOX_DIR__/logs/party-lights.log</string>
+</dict>
+</plist>

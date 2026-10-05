@@ -26,7 +26,7 @@ def get_oauth(show_dialog=False):
     return SpotifyOAuth(
         client_id=os.environ.get('SPOTIFY_CLIENT_ID', ''),
         client_secret=os.environ.get('SPOTIFY_CLIENT_SECRET', ''),
-        redirect_uri=os.environ.get('SPOTIFY_REDIRECT_URI', 'http://127.0.0.1:5000/auth/callback'),
+        redirect_uri=os.environ.get('SPOTIFY_REDIRECT_URI', 'http://127.0.0.1:5001/auth/callback'),
         scope=SCOPES,
         cache_handler=CacheFileHandler(cache_path=TOKEN_CACHE_PATH),
         open_browser=False,

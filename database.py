@@ -115,7 +115,7 @@ def init_db():
                 ('downvote_threshold', '7'),
                 ('max_queue_per_user', '2'),
                 ('skip_ban_threshold', '2'),
-                ('party_url', os.environ.get('PARTY_URL', 'http://localhost:5000')),
+                ('party_url', os.environ.get('PARTY_URL', 'http://localhost:5001')),
             ]
             for key, value in defaults:
                 cursor.execute(
