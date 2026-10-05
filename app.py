@@ -1,4 +1,6 @@
 import os
+import hmac
+import secrets
 import uuid
 import json
 import random
@@ -184,14 +186,26 @@ def qr_code():
 # ---------------------------------------------------------------------------
 # Spotify auth routes
 # ---------------------------------------------------------------------------
+# Both routes are host-only: whoever completes this flow becomes the account the
+# whole party plays through, so a guest must never be able to start or finish it.
 @app.route('/auth/spotify')
 def auth_spotify():
-    auth_url = sc.get_auth_url()
-    return redirect(auth_url)
+    if not session.get('is_host'):
+        return redirect(url_for('host'))
+    state = secrets.token_urlsafe(24)
+    session['spotify_oauth_state'] = state
+    return redirect(sc.get_auth_url(state=state))
 
 
 @app.route('/auth/callback')
 def auth_callback():
+    if not session.get('is_host'):
+        return "Log in to the host panel before connecting Spotify.", 401
+    expected = session.pop('spotify_oauth_state', None)
+    returned = request.args.get('state', '')
+    if not expected or not hmac.compare_digest(expected, returned):
+        return ("This Spotify sign-in didn't start from this host panel, or it expired. "
+                "Go back to /host and click Connect Spotify again."), 400
     code = request.args.get('code')
     error = request.args.get('error')
     if error:
@@ -673,7 +687,7 @@ def api_host_users():
 @require_host
 def api_host_spotify_status():
     connected = sc.is_authenticated()
-    auth_url = sc.get_auth_url() if not connected else None
+    auth_url = url_for('auth_spotify') if not connected else None
     party_url = db.get_setting('party_url', os.environ.get('PARTY_URL', 'http://localhost:5000'))
     fallback_id = db.get_setting('fallback_playlist_id', '')
     return jsonify({

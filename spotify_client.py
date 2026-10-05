@@ -59,9 +59,11 @@ def is_authenticated():
         return False
 
 
-def get_auth_url():
+def get_auth_url(state=None):
+    """Spotify consent URL. `state` is echoed back to /auth/callback so the app
+    can reject callbacks it didn't start (OAuth CSRF)."""
     oauth = get_oauth(show_dialog=True)  # force full consent dialog so new scopes are granted
-    return oauth.get_authorize_url()
+    return oauth.get_authorize_url(state=state)
 
 
 def handle_callback(code):
