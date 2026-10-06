@@ -6,6 +6,7 @@
   <title>Party Jukebox</title>
   <link rel="stylesheet" href="/static/css/jukebox.css">
   <link id="classic-css" rel="stylesheet" href="/static/css/classic.css"{% if ui_theme != 'classic' %} disabled{% endif %}>
+  <link rel="stylesheet" href="/static/css/camera.css">
   <meta name="theme-color" content="{{ '#1a0c08' if ui_theme == 'classic' else '#f5efe1' }}">
 </head>
 <body>
@@ -62,7 +63,7 @@
   <div id="ban-banner" class="ban-banner hidden">
     <h2>🚫 SILENCED!</h2>
     <p>You've been SILENCED, <strong id="ban-nickname"></strong>!<br>Your terrible taste has been noted.</p>
-    <p style="margin-top:8px;font-size:0.78rem;color:var(--warning)">You are no longer allowed to queue songs.</p>
+    <p style="margin-top:8px;font-size:0.78rem;color:var(--warning)">You are no longer allowed to queue songs or use the camera.</p>
   </div>
 
   <!-- Main content (hidden when banned) -->
@@ -153,6 +154,24 @@
       </div>
     </div>
 
+    <!-- Disposable camera -->
+    <div id="camera-card" class="card camera-card hidden">
+      <div class="section-header">
+        <h2>DISPOSABLE CAMERA</h2>
+        <div class="line"></div>
+      </div>
+      <div class="camera-card-body">
+        <div class="camera-counter" aria-label="Shots left">
+          <span id="camera-shots-left">0</span>
+          <small>SHOTS LEFT</small>
+        </div>
+        <div style="flex:1;min-width:0">
+          <p id="camera-status" class="camera-status"></p>
+          <button id="camera-open-btn" class="btn btn-primary" type="button">📸 OPEN CAMERA</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Up Next queue -->
     <div class="card">
       <div class="section-header">
@@ -184,6 +203,24 @@
   </div><!-- end #main-content -->
 </div>
 
+<!-- Disposable camera viewfinder (full screen). Shots are never shown back. -->
+<div id="camera-overlay" class="camera-overlay hidden" role="dialog" aria-label="Disposable camera">
+  <div class="camera-viewfinder">
+    <video id="camera-video" autoplay playsinline muted></video>
+    <div id="camera-flash" class="camera-flash"></div>
+  </div>
+  <div class="camera-controls">
+    <button id="camera-close" class="camera-side-btn" type="button" aria-label="Close camera">✕</button>
+    <button id="camera-shutter" class="camera-shutter" type="button" aria-label="Take photo"></button>
+    <button id="camera-flip" class="camera-side-btn" type="button" aria-label="Switch camera">⟲</button>
+  </div>
+  <div class="camera-frame-counter">
+    <span id="camera-wind" class="camera-wind">🎞</span>
+    <span id="camera-shots-left-vf">0</span> left · no peeking, they develop after the party
+  </div>
+</div>
+
 <script src="/static/js/app.js"></script>
+<script src="/static/js/camera.js"></script>
 </body>
 </html>

@@ -1,0 +1,241 @@
+/* ================================================================
+   PHOTOS.CSS  –  Host photo review page
+   ================================================================ */
+
+#review-view {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.review-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.review-header h1 {
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  color: var(--text-light);
+}
+
+.review-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.review-header-controls select {
+  margin-bottom: 0;
+  width: auto;
+  max-width: 100%;
+}
+
+.review-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.review-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.review-tab {
+  border: 1px solid var(--border-dark, var(--border));
+  background: transparent;
+  color: var(--text-light);
+  padding: 6px 12px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.review-tab span {
+  opacity: 0.6;
+  margin-left: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.review-tab.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.review-hint {
+  margin: 12px 0;
+  font-size: 0.76rem;
+  color: var(--text-dim);
+}
+
+.review-hint kbd {
+  font-family: inherit;
+  font-size: 0.7rem;
+  padding: 1px 5px;
+  border: 1px solid var(--border-dark, var(--border));
+  border-radius: 4px;
+}
+
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.photo-tile {
+  position: relative;
+  margin: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #000;
+  cursor: zoom-in;
+  aspect-ratio: 3 / 4;
+  box-shadow: 0 0 0 3px transparent;
+}
+
+.photo-tile.status-approved { box-shadow: 0 0 0 3px var(--success, #5f7a3a); }
+.photo-tile.status-rejected { box-shadow: 0 0 0 3px var(--danger, #a13a28); }
+.photo-tile.status-rejected img { opacity: 0.35; }
+
+.photo-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.photo-tile figcaption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 18px 8px 6px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75));
+  color: #fff;
+}
+
+.photo-meta {
+  font-size: 0.7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-actions {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+.tile-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+}
+
+.tile-btn.approve { background: #5f7a3a; }
+.tile-btn.reject  { background: #a13a28; }
+.tile-btn:disabled { opacity: 0.3; cursor: default; }
+
+.review-empty {
+  text-align: center;
+  padding: 48px 0;
+  color: var(--text-dim);
+}
+
+.review-export {
+  margin-top: 24px;
+}
+
+.review-export p {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  margin: 6px 0;
+}
+
+.review-export pre {
+  font-size: 0.78rem;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.06);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ── Viewer ── */
+.viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(10, 8, 6, 0.96);
+  display: flex;
+  flex-direction: column;
+}
+
+.viewer img {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  object-fit: contain;
+  padding: 16px 56px 0;
+}
+
+.viewer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  color: #f2ece0;
+  font-size: 0.8rem;
+}
+
+.viewer-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.viewer-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 64px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 2rem;
+  cursor: pointer;
+}
+
+.viewer-nav.prev { left: 6px; }
+.viewer-nav.next { right: 6px; }
+
+@media (max-width: 600px) {
+  .viewer img { padding: 8px 8px 0; }
+  .viewer-nav { top: auto; bottom: 70px; transform: none; }
+}

@@ -15,3 +15,7 @@ logs/
 deploy/cloudflared/config.yml
 loadtest/*.log
 loadtest/*.prof
+
+# Disposable camera: guest photos and exported galleries stay on this machine
+photos/
+exports/

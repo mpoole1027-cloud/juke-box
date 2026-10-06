@@ -84,7 +84,7 @@ function showPanel() {
 // Data loading
 // ----------------------------------------------------------------
 async function loadAll() {
-  await Promise.all([loadSpotifyStatus(), loadUsers(), loadStatus(), loadDemoState()]);
+  await Promise.all([loadSpotifyStatus(), loadUsers(), loadStatus(), loadDemoState(), loadCamera()]);
 }
 
 async function loadStatus() {
@@ -621,4 +621,51 @@ $('resume-party-btn').addEventListener('click', async () => {
     showToast('Party resumed', 'success');
     loadSpotifyStatus();
   }
+});
+
+// ----------------------------------------------------------------
+// Disposable camera
+// ----------------------------------------------------------------
+async function loadCamera() {
+  try {
+    const res = await hostFetch('/api/host/camera');
+    if (!res.ok) return;
+    const cam = await res.json();
+    $('camera-toggle').checked = cam.enabled;
+    const slider = $('camera-shots-slider');
+    if (slider.dataset.loaded !== 'true') {
+      slider.value = cam.shots_per_guest;
+      $('camera-shots-val').textContent = cam.shots_per_guest;
+      slider.dataset.loaded = 'true';
+    }
+    const tonight = cam.parties.find(p => p.party_code === cam.current_party);
+    $('camera-counts').textContent = tonight
+      ? `${tonight.total} photo${tonight.total === 1 ? '' : 's'} tonight · ${tonight.pending} waiting for review`
+      : 'No photos yet tonight.';
+  } catch (e) {}
+}
+
+async function saveCamera(body, okMsg) {
+  const res = await hostFetch('/api/host/settings', { method: 'POST', body: JSON.stringify(body) });
+  if (res.ok) showToast(okMsg, 'success');
+  else {
+    let msg = 'Failed to save camera settings';
+    try { const err = await res.json(); if (err && err.error) msg = err.error; } catch (e) {}
+    showToast(msg, 'error');
+  }
+  loadCamera();
+}
+
+$('camera-toggle').addEventListener('change', e => {
+  saveCamera({ camera_enabled: e.target.checked },
+             e.target.checked ? 'Camera on' : 'Camera off');
+});
+
+$('camera-shots-slider').addEventListener('input', e => {
+  $('camera-shots-val').textContent = e.target.value;
+});
+
+$('camera-shots-slider').addEventListener('change', e => {
+  saveCamera({ camera_shots_per_guest: parseInt(e.target.value, 10) },
+             `${e.target.value} shots per guest`);
 });

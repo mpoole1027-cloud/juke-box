@@ -101,6 +101,25 @@
         <p style="color:var(--text-dim);font-size:0.7rem;margin-top:8px">Starting a new party changes the code, so old links stop working.</p>
       </div>
 
+      <!-- Disposable camera -->
+      <div class="card">
+        <div class="section-header">
+          <h2>DISPOSABLE CAMERA</h2>
+          <div class="line"></div>
+        </div>
+        <label class="toggle-label" style="margin-bottom:12px">
+          <input type="checkbox" id="camera-toggle">
+          <span class="toggle-switch"></span>
+          Camera on for guests
+        </label>
+        <label style="font-size:0.78rem;color:var(--text-dim);display:block;margin-bottom:6px">
+          SHOTS PER GUEST: <span id="camera-shots-val" style="color:var(--primary)">24</span>
+        </label>
+        <input type="range" id="camera-shots-slider" min="1" max="100" value="24">
+        <div id="camera-counts" style="margin-top:10px;font-size:0.78rem;color:var(--text-dim)">No photos yet tonight.</div>
+        <a href="/host/photos" class="btn btn-cyan btn-sm mt-12" target="_blank" rel="noopener">REVIEW PHOTOS</a>
+      </div>
+
     </div><!-- end sidebar -->
 
     <!-- ── Main content ── -->
