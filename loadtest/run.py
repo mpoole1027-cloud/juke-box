@@ -90,11 +90,13 @@ def guest(rec, base, stop, start_delay, rng):
             last_status = r.json()
         if time.monotonic() >= next_action:
             next_action = time.monotonic() + rng.uniform(30, 90)
-            # Typing a search: the page debounces at 500 ms, so a word comes
-            # through as two or three requests.
+            # Typing a search: the page waits for an 800 ms pause and 3+
+            # characters, so a name comes through as the finished query plus,
+            # half the time, one prefix where the guest paused mid-word.
             artist = rng.choices(ARTISTS, ARTIST_WEIGHTS)[0]
             tracks = []
-            for n in sorted(rng.sample(range(3, len(artist) + 1), 2)) + [len(artist)]:
+            prefixes = [rng.randrange(3, len(artist))] if rng.random() < 0.5 else []
+            for n in prefixes + [len(artist)]:
                 r = rec.call(s, 'GET', base, f'/api/search?q={artist[:n]}')
                 if r is not None and r.ok:
                     tracks = r.json().get('tracks', [])

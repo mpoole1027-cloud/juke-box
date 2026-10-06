@@ -603,6 +603,11 @@ $('heart-btn').addEventListener('click', () => sendReaction('heart'));
 // ----------------------------------------------------------------
 // Search
 // ----------------------------------------------------------------
+// Every search is a Spotify call, and Spotify rate-limits the whole party, not
+// each guest. So search once typing pauses, and only from 3 characters; Enter
+// searches right away at any length (for "U2").
+const SEARCH_DEBOUNCE_MS = 800;
+const SEARCH_MIN_CHARS = 3;
 let searchTimeout = null;
 let lastQuery = '';
 
@@ -610,16 +615,25 @@ $('search-input').addEventListener('input', e => {
   clearTimeout(searchTimeout);
   const q = e.target.value.trim();
   if (!q) {
+    lastQuery = '';
     hideSearchResults();
     return;
   }
-  searchTimeout = setTimeout(() => doSearch(q), 500);
+  if (q.length < SEARCH_MIN_CHARS) return;
+  searchTimeout = setTimeout(() => doSearch(q), SEARCH_DEBOUNCE_MS);
 });
 
 $('search-input').addEventListener('keydown', e => {
   if (e.key === 'Escape') {
+    clearTimeout(searchTimeout);
+    lastQuery = '';
     hideSearchResults();
     $('search-input').value = '';
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    clearTimeout(searchTimeout);
+    const q = e.target.value.trim();
+    if (q) doSearch(q);
   }
 });
 
