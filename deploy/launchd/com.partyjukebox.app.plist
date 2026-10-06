@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: deploy/install.sh fills in __JUKEBOX_DIR__. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.partyjukebox.app</string>
+  <key>ProgramArguments</key>
+  <array>
+    <!-- caffeinate keeps the Mac awake for as long as the jukebox runs:
+         -i blocks idle sleep, -s blocks system sleep while on AC power. -->
+    <string>/usr/bin/caffeinate</string>
+    <string>-i</string>
+    <string>-s</string>
+    <string>__JUKEBOX_DIR__/.venv/bin/python</string>
+    <string>__JUKEBOX_DIR__/app.py</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__JUKEBOX_DIR__</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>LOG_FILE</key>
+    <string>__JUKEBOX_DIR__/logs/jukebox.log</string>
+    <key>BEHIND_PROXY</key>
+    <string>__BEHIND_PROXY__</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <!-- Wait 10 s between restarts, so a bad .env doesn't spin the CPU. -->
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>StandardErrorPath</key>
+  <string>__JUKEBOX_DIR__/logs/jukebox.stderr.log</string>
+</dict>
+</plist>

@@ -358,7 +358,14 @@ function rotateTicker() {
 // ----------------------------------------------------------------
 async function pollTv() {
   try {
-    const res = await fetch('/api/tv');
+    const res = await fetch('/api/tv', { credentials: 'same-origin' });
+    if (res.status === 403) {
+      // No party code in this browser yet. The host panel's TV link carries it.
+      document.getElementById('tv-no-track').classList.remove('hidden');
+      document.querySelector('#tv-no-track .tv-no-track-sub').textContent =
+        'Open this screen from the TV link in the host panel';
+      return;
+    }
     if (!res.ok) return;
     const data = await res.json();
     applyTheme(data.ui_theme);

@@ -18,27 +18,21 @@ function applyTheme(theme) {
 // ----------------------------------------------------------------
 // User identity
 // ----------------------------------------------------------------
-function getUserId() {
-  let uid = localStorage.getItem('jukebox_user_id');
-  if (!uid) {
-    uid = crypto.randomUUID ? crypto.randomUUID() : generateUUID();
-    localStorage.setItem('jukebox_user_id', uid);
+// The server assigns each guest an ID in a signed session cookie, so the page
+// never sees or sends one. Clear the ID older versions kept here.
+try { localStorage.removeItem('jukebox_user_id'); } catch (e) {}
+
+async function apiFetch(url, opts = {}) {
+  opts.headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+  opts.credentials = 'same-origin';
+  const res = await fetch(url, opts);
+  if (res.status === 403) {
+    // The party code expired (host started a new party): back to the join form.
+    res.clone().json().then(d => {
+      if (d && d.code === 'party_code_required') showJoinGate(true);
+    }).catch(() => {});
   }
-  return uid;
-}
-
-function generateUUID() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-    const r = Math.random() * 16 | 0;
-    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-  });
-}
-
-const USER_ID = getUserId();
-
-function apiFetch(url, opts = {}) {
-  opts.headers = Object.assign({ 'X-User-ID': USER_ID, 'Content-Type': 'application/json' }, opts.headers || {});
-  return fetch(url, opts);
+  return res;
 }
 
 // ----------------------------------------------------------------
@@ -139,6 +133,11 @@ function renderNowPlaying(track, queueId, downvoteCount, userDownvoted, reaction
   $('heart-count').textContent = reactions.heart || 0;
 }
 
+function etaText(ms) {
+  if (typeof ms !== 'number' || ms < 45000) return 'your song · up next';
+  return `your song · plays in about ${Math.round(ms / 60000)} min`;
+}
+
 function renderQueue(queue) {
   const list = $('queue-list');
   if (!queue || queue.length === 0) {
@@ -146,7 +145,7 @@ function renderQueue(queue) {
     return;
   }
   list.innerHTML = queue.map((item, i) => {
-    const isMine = item.requested_by === USER_ID;
+    const isMine = !!item.is_mine;
     const voted = !!item.user_has_upvoted;
     const count = item.upvote_count || 0;
     const nickname = item.nickname || 'someone';
@@ -164,6 +163,7 @@ function renderQueue(queue) {
         <div class="queue-item-title">${escHtml(item.track_name)}</div>
         <div class="queue-item-artist">${escHtml(item.artist)}</div>
         <div class="queue-requester">added by ${escHtml(nickname)}</div>
+        ${isMine ? `<div class="queue-requester">${etaText(item.eta_ms)}</div>` : ''}
         ${dedication}
       </div>
       <div class="queue-actions">
@@ -410,12 +410,12 @@ function fireNotification(body) {
 
 function checkMySongTransitions(data) {
   const queue = Array.isArray(data.queue) ? data.queue : [];
-  const mine = queue.filter(it => it.requested_by === USER_ID);
+  const mine = queue.filter(it => it.is_mine);
   const myIdsNow = new Set(mine.map(it => it.track_id));
 
   // "Up next": one of my songs is now first in line and wasn't announced yet.
   const first = queue[0];
-  if (first && first.requested_by === USER_ID && !firedUpNext.has(first.track_id)) {
+  if (first && first.is_mine && !firedUpNext.has(first.track_id)) {
     firedUpNext.add(first.track_id);
     showToast("🔔 You're up next!");
     fireNotification("You're up next — get ready!");
@@ -435,11 +435,76 @@ function checkMySongTransitions(data) {
   myPendingTrackIds = myIdsNow;
 }
 
+// ----------------------------------------------------------------
+// Party code gate
+// ----------------------------------------------------------------
+function showJoinGate(show) {
+  $('join-gate').classList.toggle('hidden', !show);
+  if (show) {
+    $('main-content').classList.add('hidden');
+    $('ban-banner').classList.add('hidden');
+    $('spotify-warning').classList.add('hidden');
+    $('playback-issue').classList.add('hidden');
+    $('nickname-display').classList.add('hidden');
+  } else {
+    $('nickname-display').classList.remove('hidden');
+  }
+}
+
+$('join-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const code = $('join-code').value.trim().toUpperCase();
+  if (!code) return;
+  try {
+    const res = await apiFetch('/api/join', { method: 'POST', body: JSON.stringify({ code }) });
+    if (!res.ok) {
+      $('join-error').classList.remove('hidden');
+      return;
+    }
+    $('join-error').classList.add('hidden');
+    history.replaceState(null, '', '/');
+    showToast("You're in! 🎉", 'success');
+    pollStatus();
+  } catch (err) {
+    showToast('Network error', 'error');
+  }
+});
+
+// Polls every 3 s while the page is visible, pauses in a background tab, and
+// backs off (up to 30 s) while the jukebox is unreachable.
+const POLL_MS = 3000;
+let pollTimer = null;
+let pollFailures = 0;
+
+function schedulePoll() {
+  clearTimeout(pollTimer);
+  if (document.hidden) return;
+  const delay = pollFailures ? Math.min(30000, POLL_MS * 2 ** pollFailures) : POLL_MS;
+  pollTimer = setTimeout(pollStatus, delay);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) clearTimeout(pollTimer);
+  else pollStatus();
+});
+
+function setOffline(offline) {
+  $('offline-banner').classList.toggle('hidden', !offline);
+}
+
 async function pollStatus() {
+  clearTimeout(pollTimer);
   try {
     const res = await apiFetch('/api/status');
-    if (!res.ok) return;
+    if (!res.ok) throw new Error('status ' + res.status);
     const data = await res.json();
+    pollFailures = 0;
+    setOffline(false);
+    if (data.party_code_required) {
+      showJoinGate(true);
+      return;
+    }
+    showJoinGate(false);
     state = data;
 
     applyTheme(data.ui_theme);
@@ -464,8 +529,17 @@ async function pollStatus() {
       $('spotify-warning').classList.add('hidden');
     }
 
+    // Playback problem notice (the host panel shows the details)
+    const issue = data.spotify_connected ? data.playback_issue : null;
+    $('playback-issue').classList.toggle('hidden', !issue);
+    $('playback-issue-text').textContent = issue ? '⏸ ' + issue.message : '';
+
   } catch (e) {
+    pollFailures++;
+    if (pollFailures >= 2) setOffline(true);
     console.error('Poll error:', e);
+  } finally {
+    schedulePoll();
   }
 }
 
@@ -529,6 +603,11 @@ $('heart-btn').addEventListener('click', () => sendReaction('heart'));
 // ----------------------------------------------------------------
 // Search
 // ----------------------------------------------------------------
+// Every search is a Spotify call, and Spotify rate-limits the whole party, not
+// each guest. So search once typing pauses, and only from 3 characters; Enter
+// searches right away at any length (for "U2").
+const SEARCH_DEBOUNCE_MS = 800;
+const SEARCH_MIN_CHARS = 3;
 let searchTimeout = null;
 let lastQuery = '';
 
@@ -536,16 +615,25 @@ $('search-input').addEventListener('input', e => {
   clearTimeout(searchTimeout);
   const q = e.target.value.trim();
   if (!q) {
+    lastQuery = '';
     hideSearchResults();
     return;
   }
-  searchTimeout = setTimeout(() => doSearch(q), 500);
+  if (q.length < SEARCH_MIN_CHARS) return;
+  searchTimeout = setTimeout(() => doSearch(q), SEARCH_DEBOUNCE_MS);
 });
 
 $('search-input').addEventListener('keydown', e => {
   if (e.key === 'Escape') {
+    clearTimeout(searchTimeout);
+    lastQuery = '';
     hideSearchResults();
     $('search-input').value = '';
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    clearTimeout(searchTimeout);
+    const q = e.target.value.trim();
+    if (q) doSearch(q);
   }
 });
 
@@ -693,4 +781,3 @@ document.addEventListener('click', e => {
 // Start polling
 // ----------------------------------------------------------------
 pollStatus();
-setInterval(pollStatus, 3000);

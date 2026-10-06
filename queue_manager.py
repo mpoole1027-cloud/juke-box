@@ -11,6 +11,11 @@ logger = logging.getLogger(__name__)
 # mid-track" without relying on the overloaded is_playing flag alone.
 END_THRESHOLD_MS = 3000
 
+# How often the worker reads Spotify. It is also the freshness of what every
+# page shows, since request threads read the worker's snapshot (see
+# get_cached_playback) instead of calling Spotify themselves.
+POLL_SECONDS = 3
+
 _lock = threading.Lock()
 _current_spotify_track_id = None
 _last_playing_queue_id = None
@@ -27,6 +32,115 @@ _last_activity = time.monotonic()
 _standing_down = False
 # Tracks whether we're mid-outage, so the warning logs once, not every tick.
 _last_playback_error = False
+
+# What's stopping the music right now, if anything: {'code', 'detail'} or None.
+# Failures used to only reach the server log, so a missing speaker looked to
+# guests like a queue that silently stopped moving.
+_playback_issue = None
+
+ISSUE_MESSAGES = {
+    # code: (host panel, guest page)
+    'spotify_not_connected': (
+        "Spotify isn't connected. Use Connect Spotify in the host panel.",
+        "The host is reconnecting Spotify. Hang tight."),
+    'spotify_rate_limited': (
+        "Spotify is rate-limiting the jukebox, so searches and song changes "
+        "pause for a minute or two. It resumes on its own.",
+        "Spotify needs a breather. Back in a minute..."),
+    'spotify_unreachable': (
+        "Can't reach Spotify. Retrying every few seconds.",
+        "Spotify isn't responding. Retrying..."),
+    'no_device': (
+        "No Spotify device is online. Open Spotify on the party Mac, or pick a "
+        "device in Settings. The next song starts as soon as one appears.",
+        "Music is paused while the host sorts out the speakers."),
+    'play_failed': (
+        "Spotify wouldn't play the next song ({detail}). Retrying every few seconds.",
+        "Music is paused while the host sorts something out."),
+}
+# Issues the worker clears or retries on its own, vs. ones only a successful
+# play clears.
+_SPOTIFY_STATE_ISSUES = ('spotify_not_connected', 'spotify_rate_limited',
+                         'spotify_unreachable')
+_PLAY_ISSUES = ('no_device', 'play_failed')
+
+
+def _set_issue(code, detail=''):
+    global _playback_issue
+    new = {'code': code, 'detail': detail}
+    if _playback_issue != new:
+        logger.warning("Playback issue: %s %s", code, detail)
+    _playback_issue = new
+
+
+def _clear_issue(codes=None):
+    global _playback_issue
+    if _playback_issue and (codes is None or _playback_issue['code'] in codes):
+        logger.info("Playback issue cleared: %s", _playback_issue['code'])
+        _playback_issue = None
+
+
+def get_playback_issue():
+    """The current problem as {'code', 'host_message', 'guest_message'}, or None."""
+    issue = _playback_issue
+    if not issue:
+        return None
+    host_msg, guest_msg = ISSUE_MESSAGES[issue['code']]
+    return {'code': issue['code'],
+            'host_message': host_msg.format(detail=issue['detail'] or 'unknown error'),
+            'guest_message': guest_msg}
+
+
+def note_play_result(ok, err=None, device_id=None):
+    """Record the outcome of asking Spotify to play something."""
+    if ok:
+        _clear_issue(_PLAY_ISSUES)
+        return
+    text = str(err or '')
+    if device_id is None or 'NO_ACTIVE_DEVICE' in text or 'Device not found' in text:
+        _set_issue('no_device')
+    else:
+        _set_issue('play_failed', text[:120])
+
+
+# Latest known Spotify playback payload as (monotonic time, payload or None).
+# Without it every guest, TV and party-lights poll was its own Spotify call:
+# ~5 calls/s with a dozen phones, enough to draw 429s from Spotify.
+_snapshot = None
+_snapshot_lock = threading.Lock()
+_fetch_lock = threading.Lock()
+
+
+def _store_snapshot(playback):
+    global _snapshot
+    with _snapshot_lock:
+        _snapshot = (time.monotonic(), playback)
+
+
+def invalidate_playback_cache():
+    """Call after changing what Spotify plays, so pages don't show the old song."""
+    global _snapshot
+    with _snapshot_lock:
+        _snapshot = None
+
+
+def get_cached_playback(max_age=POLL_SECONDS + 1):
+    """What Spotify is playing, at most max_age seconds old.
+
+    Normally the worker keeps this fresh. When it isn't polling (standing down,
+    or between ticks after an invalidation), the first request thread through
+    refreshes it and concurrent ones wait for and reuse that one result.
+    """
+    snap = _snapshot
+    if snap and time.monotonic() - snap[0] <= max_age:
+        return snap[1]
+    with _fetch_lock:
+        snap = _snapshot
+        if snap and time.monotonic() - snap[0] <= max_age:
+            return snap[1]
+        playback = sc.get_current_playback()
+        _store_snapshot(playback)
+        return playback
 
 
 def note_activity():
@@ -84,9 +198,21 @@ def _check_downvote_threshold(playing_item):
 
 
 def get_party_device_id():
-    """Resolve the playback device, honouring the host's pinned choice."""
-    return sc.get_active_device_id(
-        preferred_device_id=db.get_setting('preferred_device_id') or None)
+    """Resolve the playback device, honouring the host's pinned choice.
+
+    With nothing pinned and exactly one computer online, pin it: that's the
+    party Mac, and without a pin a guest-visible phone or speaker that grabs
+    Spotify Connect would take over the party. Only computers are auto-pinned,
+    so a phone that happens to be the only device can't stick as the target.
+    """
+    pinned = db.get_setting('preferred_device_id') or None
+    if not pinned:
+        computers = [d for d in sc.list_devices() if d.get('type') == 'Computer']
+        if len(computers) == 1:
+            pinned = computers[0]['id']
+            db.set_setting('preferred_device_id', pinned)
+            logger.info(f"Auto-pinned playback device {computers[0]['name']}.")
+    return sc.get_active_device_id(preferred_device_id=pinned)
 
 
 def get_fallback_playlist_id():
@@ -134,7 +260,9 @@ def _start_fallback(device_id=None):
         playlist_id, device_id=device_id,
         shuffle=True, random_offset=True, track_count=meta['track_count'],
     )
+    note_play_result(ok, err, device_id)
     if ok:
+        invalidate_playback_cache()
         logger.info(f"Queue empty — started fallback playlist ({meta['name']}).")
         # Whatever plays now is not one of ours, so it must not be recorded as
         # played (see _finish_current_track).
@@ -180,7 +308,9 @@ def _advance_to_next_pending():
     if pending:
         next_item = pending[0]
         ok, err = sc.play_track(f"spotify:track:{next_item['spotify_track_id']}", device_id=device_id)
+        note_play_result(ok, err, device_id)
         if ok:
+            invalidate_playback_cache()
             db.update_queue_status(next_item['id'], 'playing')
             _current_spotify_track_id = next_item['spotify_track_id']
             _last_playing_queue_id = next_item['id']
@@ -234,8 +364,16 @@ def background_worker():
             # Fetched outside _lock: it's a network round-trip, and holding
             # the lock across it stalls every request thread.
             state = sc.get_playback_state()
+            if state['status'] != sc.PLAYBACK_ERROR:
+                _store_snapshot(state['playback'])
 
             if state['status'] == sc.PLAYBACK_ERROR:
+                if state.get('reason') == 'not_authenticated':
+                    _set_issue('spotify_not_connected')
+                elif state.get('reason') == 'rate_limited':
+                    _set_issue('spotify_rate_limited')
+                else:
+                    _set_issue('spotify_unreachable')
                 # We could not find out what Spotify is doing. Say nothing,
                 # change nothing, try again next tick. Treating this as "the
                 # song ended" is what used to skip a guest's song and burn it
@@ -244,12 +382,17 @@ def background_worker():
                     logger.warning("Spotify state unavailable (%s) — holding position.",
                                    state.get('reason', 'unknown'))
                 _last_playback_error = True
-                _stop_event.wait(5)
+                _stop_event.wait(POLL_SECONDS)
                 continue
 
             if _last_playback_error:
                 logger.info("Spotify reachable again — resuming.")
             _last_playback_error = False
+            _clear_issue(_SPOTIFY_STATE_ISSUES)
+            pb = state['playback']
+            if pb and pb.get('is_playing'):
+                # Music is coming out of something, so any device problem is over.
+                _clear_issue(_PLAY_ISSUES)
 
             with _lock:
                 playback = state['playback']
@@ -261,6 +404,13 @@ def background_worker():
                     # forcing the fallback playlist back on.
                     if _current_spotify_track_id:
                         _finish_current_track()
+                        _advance_to_next_pending()
+                    elif (_playback_issue and _playback_issue['code'] in _PLAY_ISSUES
+                          and db.get_pending_queue()):
+                        # A song is waiting only because the last play attempt
+                        # failed (no device, Spotify said no). Retry each tick
+                        # so it starts once the host fixes things, instead of
+                        # sitting pending until another guest queues a song.
                         _advance_to_next_pending()
                 else:
                     spotify_track = playback['item']
@@ -331,15 +481,24 @@ def background_worker():
         except Exception as e:
             logger.error(f"Background worker error: {e}", exc_info=True)
 
-        _stop_event.wait(5)
+        _stop_event.wait(POLL_SECONDS)
 
     logger.info("Queue manager background thread stopped.")
 
 
+_worker_thread = None
+
+
 def start_background_thread():
+    global _worker_thread
     t = threading.Thread(target=background_worker, daemon=True, name="QueueManager")
     t.start()
+    _worker_thread = t
     return t
+
+
+def worker_alive():
+    return _worker_thread is not None and _worker_thread.is_alive()
 
 
 def stop_background_thread():

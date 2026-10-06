@@ -1,7 +1,13 @@
 import os
 import re
 import random
+import threading
+import time
+from collections import OrderedDict
+
+import requests
 import spotipy
+from urllib3.util.retry import Retry
 from spotipy.oauth2 import SpotifyOAuth
 from spotipy.cache_handler import CacheFileHandler
 import logging
@@ -19,19 +25,87 @@ SCOPES = (
     "streaming"
 )
 
-PLAYLIST_NAME = "🎃 Party Jukebox 🎃"
-
 
 def get_oauth(show_dialog=False):
     return SpotifyOAuth(
         client_id=os.environ.get('SPOTIFY_CLIENT_ID', ''),
         client_secret=os.environ.get('SPOTIFY_CLIENT_SECRET', ''),
-        redirect_uri=os.environ.get('SPOTIFY_REDIRECT_URI', 'http://127.0.0.1:5000/auth/callback'),
+        redirect_uri=os.environ.get('SPOTIFY_REDIRECT_URI', 'http://127.0.0.1:5001/auth/callback'),
         scope=SCOPES,
         cache_handler=CacheFileHandler(cache_path=TOKEN_CACHE_PATH),
         open_browser=False,
         show_dialog=show_dialog,
     )
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting
+# ---------------------------------------------------------------------------
+# Spotify answers a busy app with 429 and a Retry-After that can run to
+# minutes. spotipy's default session retries 429s by sleeping through that
+# Retry-After inside the call, which would park a request thread per guest
+# search until all 16 are stuck and every page hangs. Instead: never retry a
+# 429, remember when Spotify said to come back, and fail fast until then.
+DEFAULT_RETRY_AFTER = 30
+_retry_until = 0.0
+
+
+class RateLimited(Exception):
+    """Raised instead of calling Spotify while it has asked us to back off."""
+
+
+def rate_limited_for():
+    """Seconds left before Spotify will take calls again (0 when it will)."""
+    return max(0.0, _retry_until - time.monotonic())
+
+
+def _note_retry_after(value):
+    global _retry_until
+    try:
+        wait = max(1, int(value))
+    except (TypeError, ValueError):
+        wait = DEFAULT_RETRY_AFTER
+    _retry_until = max(_retry_until, time.monotonic() + wait)
+    logger.warning("Spotify rate limit hit: backing off for %ss.", wait)
+
+
+class _SpotifySession(requests.Session):
+    def request(self, method, url, *args, **kwargs):
+        wait = rate_limited_for()
+        if wait:
+            raise RateLimited(f"Spotify asked us to wait; {wait:.0f}s left")
+        response = super().request(method, url, *args, **kwargs)
+        if response.status_code == 429:
+            _note_retry_after(response.headers.get('Retry-After'))
+        return response
+
+
+def _make_session():
+    # One shared session so calls reuse connections. Same retries as spotipy's
+    # default, minus 429.
+    session = _SpotifySession()
+    retry = Retry(total=3, connect=None, read=False, status=3, backoff_factor=0.3,
+                  allowed_methods=frozenset(['GET', 'POST', 'PUT', 'DELETE']),
+                  status_forcelist=(500, 502, 503, 504))
+    adapter = requests.adapters.HTTPAdapter(max_retries=retry, pool_maxsize=20)
+    session.mount('https://', adapter)
+    return session
+
+
+_session = _make_session()
+_client = (None, None)          # (access token, spotipy client)
+
+
+def _client_for(token):
+    # Reuse one client per token: spotipy closes its session when a client is
+    # garbage-collected, so a fresh client per call would keep tearing down
+    # the shared connection pool.
+    global _client
+    current = _client
+    if current[0] != token:
+        current = (token, spotipy.Spotify(auth=token, requests_session=_session))
+        _client = current
+    return current[1]
 
 
 def get_spotify():
@@ -43,8 +117,7 @@ def get_spotify():
             return None
         if oauth.is_token_expired(token_info):
             token_info = oauth.refresh_access_token(token_info['refresh_token'])
-        sp = spotipy.Spotify(auth=token_info['access_token'])
-        return sp
+        return _client_for(token_info['access_token'])
     except Exception as e:
         logger.error(f"Error getting Spotify client: {e}")
         return None
@@ -59,9 +132,11 @@ def is_authenticated():
         return False
 
 
-def get_auth_url():
+def get_auth_url(state=None):
+    """Spotify consent URL. `state` is echoed back to /auth/callback so the app
+    can reject callbacks it didn't start (OAuth CSRF)."""
     oauth = get_oauth(show_dialog=True)  # force full consent dialog so new scopes are granted
-    return oauth.get_authorize_url()
+    return oauth.get_authorize_url(state=state)
 
 
 def handle_callback(code):
@@ -112,6 +187,8 @@ def get_playback_state():
         return {'status': PLAYBACK_ERROR, 'playback': None, 'reason': 'not_authenticated'}
     try:
         playback = sp.current_playback()
+    except RateLimited:
+        return {'status': PLAYBACK_ERROR, 'playback': None, 'reason': 'rate_limited'}
     except Exception as e:
         logger.error(f"Error getting current playback: {e}")
         return {'status': PLAYBACK_ERROR, 'playback': None, 'reason': str(e)}
@@ -121,7 +198,37 @@ def get_playback_state():
     return {'status': PLAYBACK_OK, 'playback': playback}
 
 
+# Search results barely change over a night, and guests type the same artists
+# and the same prefixes on the way to them. A hit costs Spotify nothing.
+SEARCH_CACHE_SECONDS = 15 * 60
+SEARCH_CACHE_SIZE = 1000
+_search_cache = OrderedDict()   # (query, limit) -> (monotonic time, tracks)
+_search_lock = threading.Lock()
+
+
+def _normalize_query(query):
+    return ' '.join(query.lower().split())
+
+
 def search_tracks(query, limit=10):
+    key = (_normalize_query(query), limit)
+    with _search_lock:
+        hit = _search_cache.get(key)
+        if hit and time.monotonic() - hit[0] < SEARCH_CACHE_SECONDS:
+            _search_cache.move_to_end(key)
+            return hit[1]
+    tracks = _search_spotify(query, limit)
+    if tracks:
+        # Only cache real answers, so a failed call is retried next time.
+        with _search_lock:
+            _search_cache[key] = (time.monotonic(), tracks)
+            _search_cache.move_to_end(key)
+            while len(_search_cache) > SEARCH_CACHE_SIZE:
+                _search_cache.popitem(last=False)
+    return tracks
+
+
+def _search_spotify(query, limit):
     sp = get_spotify()
     if not sp:
         return []
@@ -161,89 +268,6 @@ def play_track(track_uri, device_id=None):
     except Exception as e:
         logger.error(f"Error playing track: {e}")
         return False, str(e)
-
-
-def pause_playback(device_id=None):
-    sp = get_spotify()
-    if not sp:
-        return
-    try:
-        sp.pause_playback(device_id=device_id)
-    except Exception as e:
-        logger.error(f"Error pausing playback: {e}")
-
-
-def add_to_spotify_queue(track_uri, device_id=None):
-    sp = get_spotify()
-    if not sp:
-        return False, "Not authenticated with Spotify"
-    try:
-        sp.add_to_queue(track_uri, device_id=device_id)
-        return True, None
-    except Exception as e:
-        logger.error(f"Error adding to Spotify queue: {e}")
-        return False, str(e)
-
-
-def skip_track(device_id=None):
-    sp = get_spotify()
-    if not sp:
-        return False, "Not authenticated with Spotify"
-    try:
-        sp.next_track(device_id=device_id)
-        return True, None
-    except Exception as e:
-        logger.error(f"Error skipping track: {e}")
-        return False, str(e)
-
-
-def get_or_create_jukebox_playlist():
-    """Find our private jukebox playlist or create it. Returns playlist_id or None."""
-    sp = get_spotify()
-    if not sp:
-        return None
-    try:
-        user_id = sp.me()['id']
-        offset = 0
-        while True:
-            result = sp.current_user_playlists(limit=50, offset=offset)
-            for p in result['items']:
-                if p and p.get('name') == PLAYLIST_NAME:
-                    return p['id']
-            if not result['next']:
-                break
-            offset += 50
-        playlist = sp.user_playlist_create(
-            user_id, PLAYLIST_NAME, public=False,
-            description="Managed by Party Jukebox app — do not edit manually"
-        )
-        logger.info(f"Created jukebox playlist: {playlist['id']}")
-        return playlist['id']
-    except Exception as e:
-        logger.error(f"Error in get_or_create_jukebox_playlist: {e}")
-        return None
-
-
-def add_track_to_playlist(playlist_id, track_uri):
-    sp = get_spotify()
-    if not sp:
-        return False, "Not authenticated"
-    try:
-        sp.playlist_add_items(playlist_id, [track_uri])
-        return True, None
-    except Exception as e:
-        logger.error(f"Error adding track to playlist: {e}")
-        return False, str(e)
-
-
-def remove_track_from_playlist(playlist_id, track_uri):
-    sp = get_spotify()
-    if not sp:
-        return
-    try:
-        sp.playlist_remove_all_occurrences_of_items(playlist_id, [track_uri])
-    except Exception as e:
-        logger.error(f"Error removing track from playlist: {e}")
 
 
 def clear_jukebox_playlist(playlist_id):

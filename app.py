@@ -1,16 +1,21 @@
 import os
+import hmac
+import secrets
 import uuid
 import json
 import random
 import io
 import logging
+from datetime import timedelta
 from functools import wraps
 
 from flask import (
     Flask, render_template, request, jsonify,
-    session, redirect, url_for, send_file, make_response
+    session, redirect, url_for, send_file
 )
 from dotenv import load_dotenv
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 load_dotenv()
 
@@ -18,11 +23,69 @@ import database as db
 import spotify_client as sc
 import queue_manager as qm
 
-logging.basicConfig(level=logging.INFO)
+def _configure_logging():
+    """Log to stderr, or with LOG_FILE set (as under launchd) to a rotating file
+    so a long-running party machine never fills its disk. stderr then only
+    catches crashes before logging starts."""
+    handlers = []
+    log_file = os.environ.get('LOG_FILE')
+    if log_file:
+        from logging.handlers import RotatingFileHandler
+        os.makedirs(os.path.dirname(os.path.abspath(log_file)), exist_ok=True)
+        handlers.append(RotatingFileHandler(log_file, maxBytes=5_000_000, backupCount=5))
+    else:
+        handlers.append(logging.StreamHandler())
+    logging.basicConfig(level=logging.INFO, handlers=handlers,
+                        format='%(asctime)s %(levelname)s %(name)s: %(message)s')
+
+
+_configure_logging()
 logger = logging.getLogger(__name__)
 
+# JUKEBOX_DEV=1 relaxes the startup checks below for local hacking. Never set
+# it on a machine guests can reach.
+DEV_MODE = os.environ.get('JUKEBOX_DEV') == '1'
+_DEV_SECRET = 'dev-secret-change-me'
+_PLACEHOLDER_SECRETS = (_DEV_SECRET, 'choose_a_long_random_string')
+
 app = Flask(__name__)
-app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-change-me')
+app.secret_key = os.environ.get('FLASK_SECRET_KEY') or _DEV_SECRET
+# Long enough that a guest who closes the tab keeps their identity all night.
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=3)
+
+# BEHIND_PROXY=1 when guests arrive through a tunnel or reverse proxy (e.g.
+# cloudflared). It trusts one hop of X-Forwarded-* so client IPs (rate limits)
+# and https URLs come out right, marks the session cookie Secure, and binds the
+# server to localhost so the proxy is the only way in.
+BEHIND_PROXY = os.environ.get('BEHIND_PROXY') == '1'
+if BEHIND_PROXY:
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    SESSION_COOKIE_SECURE=BEHIND_PROXY,
+)
+
+# ---------------------------------------------------------------------------
+# Rate limiting
+# ---------------------------------------------------------------------------
+# In-memory counters are fine: the app runs as exactly one process (see the
+# bottom of this file). Guests are counted per browser; logins and joins per IP,
+# since those are what a password- or code-guesser would hammer.
+def _rate_key():
+    return session.get('guest_id') or get_remote_address()
+
+
+limiter = Limiter(key_func=_rate_key, app=app, storage_uri='memory://',
+                  default_limits=[], headers_enabled=True)
+
+
+@app.errorhandler(429)
+def _rate_limited(e):
+    return jsonify({'error': 'Slow down a little and try again in a minute.',
+                    'code': 'rate_limited'}), 429
+
 
 # ---------------------------------------------------------------------------
 # Nickname generation
@@ -58,31 +121,72 @@ def get_or_create_user(user_id):
 
 
 def require_host(f):
-    """Decorator: requires either a valid host session or X-Host-Password header."""
+    """Decorator: requires a host session (set by /api/host/login)."""
     @wraps(f)
     def decorated(*args, **kwargs):
         if session.get('is_host'):
-            return f(*args, **kwargs)
-        header_pw = request.headers.get('X-Host-Password', '')
-        stored_pw = db.get_setting('host_password', 'party2024')
-        if header_pw == stored_pw:
             return f(*args, **kwargs)
         return jsonify({'error': 'Unauthorized'}), 401
     return decorated
 
 
-def get_user_id_from_request():
-    return request.headers.get('X-User-ID', '').strip()
+def get_user_id_from_request(create=True):
+    """The guest's ID, kept in the signed session cookie.
+
+    The server picks it, so a guest can't claim someone else's ID or mint a
+    fresh one to dodge a ban or stack votes the way a client-chosen header
+    allowed. Read-only callers pass create=False so pollers that don't keep
+    cookies (party-lights) don't mint a new guest on every request.
+    """
+    uid = session.get('guest_id')
+    if not uid and create:
+        uid = uuid.uuid4().hex
+        session['guest_id'] = uid
+        session.permanent = True
+    return uid or ''
 
 
-def get_or_init_playlist():
-    """Return the cached jukebox playlist_id, creating it if needed."""
-    playlist_id = db.get_setting('jukebox_playlist_id')
-    if not playlist_id:
-        playlist_id = sc.get_or_create_jukebox_playlist()
-        if playlist_id:
-            db.set_setting('jukebox_playlist_id', playlist_id)
-    return playlist_id
+def has_party_access():
+    """True for the host, and for guests who arrived with tonight's party code."""
+    if session.get('is_host'):
+        return True
+    code = db.get_setting('party_code', '')
+    return bool(code) and hmac.compare_digest(session.get('party_code', ''), code)
+
+
+def require_party(f):
+    """Decorator for guest actions: a leaked URL alone isn't enough to join."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if has_party_access():
+            return f(*args, **kwargs)
+        return jsonify({'error': 'Scan the party QR code to join.',
+                        'code': 'party_code_required'}), 403
+    return decorated
+
+
+def _accept_party_code(raw):
+    """Store the code in the session if it's tonight's. Returns True on success."""
+    code = (raw or '').strip().upper()
+    current = db.get_setting('party_code', '')
+    if code and current and hmac.compare_digest(code, current):
+        session['party_code'] = current
+        session.permanent = True
+        return True
+    return False
+
+
+def party_links():
+    """Invite and TV links for the host panel. The code rides in the query string."""
+    party_url = db.get_setting('party_url', os.environ.get('PARTY_URL', 'http://localhost:5001'))
+    base = party_url.rstrip('/')
+    code = db.get_setting('party_code', '')
+    return {
+        'party_url': party_url,
+        'party_code': code,
+        'invite_url': f'{base}/?p={code}',
+        'tv_url': f'{base}/tv?p={code}',
+    }
 
 
 def _resolve_current_track():
@@ -103,7 +207,7 @@ def _resolve_current_track():
         except Exception:
             current_track = None
     else:
-        playback = sc.get_current_playback()
+        playback = qm.get_cached_playback()
         if playback and playback.get('item'):
             item = playback['item']
             current_track = {
@@ -138,6 +242,11 @@ def _resolve_current_track():
     return current_track, playing_queue_item, current_queue_id
 
 
+def _guest_issue():
+    issue = qm.get_playback_issue()
+    return {'code': issue['code'], 'message': issue['guest_message']} if issue else None
+
+
 UI_THEMES = ('modern', 'classic')
 
 
@@ -157,7 +266,13 @@ def _note_party_activity():
 # ---------------------------------------------------------------------------
 @app.route('/')
 def index():
-    return render_template('index.html', ui_theme=_ui_theme())
+    if 'p' in request.args:
+        ok = _accept_party_code(request.args['p'])
+        # Drop the code from the address bar so screenshots don't share it.
+        return redirect(url_for('index', **({} if ok else {'bad_code': 1})))
+    get_or_create_user(get_user_id_from_request())
+    return render_template('index.html', ui_theme=_ui_theme(),
+                           bad_code='bad_code' in request.args)
 
 
 @app.route('/host')
@@ -167,14 +282,29 @@ def host():
 
 @app.route('/tv')
 def tv():
+    if 'p' in request.args:
+        _accept_party_code(request.args['p'])
+        return redirect(url_for('tv'))
     return render_template('tv.html', ui_theme=_ui_theme())
 
 
+@app.route('/api/join', methods=['POST'])
+@limiter.limit('10 per minute', key_func=get_remote_address)
+def api_join():
+    """Manual entry of the party code, for guests who can't scan the QR."""
+    data = request.get_json() or {}
+    if _accept_party_code(data.get('code')):
+        get_or_create_user(get_user_id_from_request())
+        return jsonify({'success': True})
+    return jsonify({'error': "That code doesn't match tonight's party."}), 403
+
+
 @app.route('/qr')
+@require_host
 def qr_code():
+    # Host-only: the QR carries the party code.
     import qrcode
-    party_url = db.get_setting('party_url', os.environ.get('PARTY_URL', 'http://localhost:5000'))
-    img = qrcode.make(party_url)
+    img = qrcode.make(party_links()['invite_url'])
     buf = io.BytesIO()
     img.save(buf, 'PNG')
     buf.seek(0)
@@ -184,14 +314,26 @@ def qr_code():
 # ---------------------------------------------------------------------------
 # Spotify auth routes
 # ---------------------------------------------------------------------------
+# Both routes are host-only: whoever completes this flow becomes the account the
+# whole party plays through, so a guest must never be able to start or finish it.
 @app.route('/auth/spotify')
 def auth_spotify():
-    auth_url = sc.get_auth_url()
-    return redirect(auth_url)
+    if not session.get('is_host'):
+        return redirect(url_for('host'))
+    state = secrets.token_urlsafe(24)
+    session['spotify_oauth_state'] = state
+    return redirect(sc.get_auth_url(state=state))
 
 
 @app.route('/auth/callback')
 def auth_callback():
+    if not session.get('is_host'):
+        return "Log in to the host panel before connecting Spotify.", 401
+    expected = session.pop('spotify_oauth_state', None)
+    returned = request.args.get('state', '')
+    if not expected or not hmac.compare_digest(expected, returned):
+        return ("This Spotify sign-in didn't start from this host panel, or it expired. "
+                "Go back to /host and click Connect Spotify again."), 400
     code = request.args.get('code')
     error = request.args.get('error')
     if error:
@@ -208,11 +350,11 @@ def auth_callback():
 # Host login / logout
 # ---------------------------------------------------------------------------
 @app.route('/api/host/login', methods=['POST'])
+@limiter.limit('5 per minute;30 per hour', key_func=get_remote_address)
 def host_login():
     data = request.get_json() or {}
     password = data.get('password', '')
-    stored_pw = db.get_setting('host_password', 'party2024')
-    if password == stored_pw:
+    if db.check_host_password(password):
         session['is_host'] = True
         return jsonify({'success': True})
     return jsonify({'error': 'Invalid password'}), 401
@@ -234,7 +376,16 @@ def host_auth_check():
 # ---------------------------------------------------------------------------
 @app.route('/api/status')
 def api_status():
-    user_id = get_user_id_from_request()
+    if not has_party_access():
+        # Outsiders (and cookieless local pollers like party-lights) see only
+        # what's playing: no queue, nicknames, dedications or settings.
+        return jsonify({
+            'party_code_required': True,
+            'current_track': api_now().get_json()['current_track'],
+            'ui_theme': _ui_theme(),
+        })
+
+    user_id = get_user_id_from_request(create=False)
     user = get_or_create_user(user_id) if user_id else None
 
     demo_mode = db.get_setting('demo_mode', '0') == '1'
@@ -251,6 +402,15 @@ def api_status():
             user_has_downvoted = db.user_has_downvoted(current_queue_id, user_id)
 
     pending_queue = db.get_pending_queue()
+    my_upvotes = db.get_user_upvoted_ids(user_id) if user_id else set()
+    # Rough wait for each queued song: what's left of the current track plus
+    # everything ahead of it.
+    etas, wait_ms = [], 0
+    if current_track and current_track.get('duration_ms'):
+        wait_ms = max(0, current_track['duration_ms'] - (current_track.get('progress_ms') or 0))
+    for q in pending_queue:
+        etas.append(wait_ms)
+        wait_ms += q['duration_ms'] or 0
     # Reaction counts for the CURRENT song only (fall back to global if none).
     reactions = db.get_reaction_counts(current_queue_id) if current_queue_id else db.get_reaction_counts()
     banned_users = db.get_banned_users()
@@ -270,37 +430,71 @@ def api_status():
         'queue': [
             {
                 'id': q['id'],
+                'track_id': q['spotify_track_id'],
                 'track_name': q['track_name'],
                 'artist': q['artist'],
                 'album_art': q['album_art'],
                 'duration_ms': q['duration_ms'],
                 'status': q['status'],
-                'requested_by': q['requested_by'],
+                'is_mine': bool(user_id) and q['requested_by'] == user_id,
                 'nickname': q['nickname'],
                 'dedication': q.get('dedication'),
                 'upvote_count': q['upvote_count'],
-                'user_has_upvoted': db.user_has_upvoted(q['id'], user_id) if user_id else False,
+                'user_has_upvoted': q['id'] in my_upvotes,
+                'eta_ms': eta,
             }
-            for q in pending_queue
+            for q, eta in zip(pending_queue, etas)
         ],
         'reactions': reactions,
-        'banned_users': banned_users,
+        'banned_users': [{'nickname': u['nickname']} for u in banned_users],
         'user': {
-            'user_id': user['user_id'],
             'nickname': user['nickname'],
             'is_banned': bool(user['is_banned']),
         } if user else None,
         'settings': settings,
         'spotify_connected': sc.is_authenticated(),
+        'playback_issue': _guest_issue(),
         'ui_theme': _ui_theme(),
     })
 
 
+@app.route('/api/now')
+def api_now():
+    """What's playing, for local integrations like party-lights. No party code
+    needed and nothing beyond the track; same shape as /api/status's
+    current_track. Served from the playback snapshot, so polling it is cheap."""
+    track, _, _ = _resolve_current_track()
+    return jsonify({'current_track': (
+        {k: track.get(k) for k in ('track_id', 'track_name', 'artist', 'is_playing')}
+        if track else None)})
+
+
+@app.route('/healthz')
+def healthz():
+    """Liveness for the preflight script and uptime checks. 503 when the app
+    can't do its job (database unreadable or the queue worker died)."""
+    try:
+        db.get_setting('party_code')
+        db_ok = True
+    except Exception:
+        db_ok = False
+    worker_ok = qm.worker_alive()
+    issue = qm.get_playback_issue()
+    ok = db_ok and worker_ok
+    return jsonify({
+        'ok': ok,
+        'database': db_ok,
+        'queue_worker': worker_ok,
+        'spotify_connected': sc.is_authenticated(),
+        'standing_down': qm.is_standing_down(),
+        'playback_issue': issue['code'] if issue else None,
+    }), 200 if ok else 503
+
+
 @app.route('/api/search')
+@limiter.limit('30 per minute')
+@require_party
 def api_search():
-    user_id = get_user_id_from_request()
-    if user_id:
-        get_or_create_user(user_id)
 
     q = request.args.get('q', '').strip()
     if not q:
@@ -310,10 +504,15 @@ def api_search():
         return jsonify({'error': 'Spotify not connected', 'tracks': []}), 503
 
     tracks = sc.search_tracks(q, limit=10)
+    if not tracks and sc.rate_limited_for():
+        return jsonify({'error': 'Spotify is busy. Try searching again in a minute.',
+                        'tracks': []}), 503
     return jsonify({'tracks': tracks})
 
 
 @app.route('/api/queue', methods=['POST'])
+@limiter.limit('10 per minute')
+@require_party
 def api_queue():
     user_id = get_user_id_from_request()
     if not user_id:
@@ -353,17 +552,22 @@ def api_queue():
     queue_id = db.add_to_queue(track_id, track_name, artist, album_art, duration_ms, user_id, dedication=ded)
 
     if sc.is_authenticated():
-        playback = sc.get_current_playback()
+        # The worker's snapshot, not a fresh Spotify call per queued song.
+        playback = qm.get_cached_playback()
         if not playback or not playback.get('is_playing'):
             device_id = qm.get_party_device_id()
-            ok, _ = sc.play_track(f'spotify:track:{track_id}', device_id=device_id)
+            ok, err = sc.play_track(f'spotify:track:{track_id}', device_id=device_id)
+            qm.note_play_result(ok, err, device_id)
             if ok:
+                qm.invalidate_playback_cache()
                 db.update_queue_status(queue_id, 'playing')
 
     return jsonify({'success': True, 'queue_id': queue_id})
 
 
 @app.route('/api/downvote', methods=['POST'])
+@limiter.limit('20 per minute')
+@require_party
 def api_downvote():
     user_id = get_user_id_from_request()
     if not user_id:
@@ -407,6 +611,8 @@ def api_downvote():
 
 
 @app.route('/api/react', methods=['POST'])
+@limiter.limit('40 per minute')
+@require_party
 def api_react():
     user_id = get_user_id_from_request()
     if not user_id:
@@ -427,6 +633,8 @@ def api_react():
 
 
 @app.route('/api/user/nickname', methods=['POST'])
+@limiter.limit('10 per minute')
+@require_party
 def api_set_nickname():
     user_id = get_user_id_from_request()
     if not user_id:
@@ -447,6 +655,8 @@ def api_set_nickname():
 
 
 @app.route('/api/upvote', methods=['POST'])
+@limiter.limit('30 per minute')
+@require_party
 def api_upvote():
     user_id = get_user_id_from_request()
     if not user_id:
@@ -474,6 +684,8 @@ def api_upvote():
 
 
 @app.route('/api/queue/<int:queue_id>', methods=['DELETE'])
+@limiter.limit('20 per minute')
+@require_party
 def api_remove_queue_item(queue_id):
     user_id = get_user_id_from_request()
     if not user_id:
@@ -492,8 +704,9 @@ def api_remove_queue_item(queue_id):
 
 
 @app.route('/api/tv')
+@require_party
 def api_tv():
-    """Public TV dashboard payload (no auth)."""
+    """TV dashboard payload. Needs the party code (open /tv?p=CODE) or a host session."""
     current_track, playing_queue_item, current_queue_id = _resolve_current_track()
 
     reactions = db.get_reaction_counts(current_queue_id) if current_queue_id else db.get_reaction_counts()
@@ -588,7 +801,11 @@ def api_host_settings():
     if 'host_password' in data:
         pw = data['host_password'].strip()
         if pw:
-            db.set_setting('host_password', pw)
+            if len(pw) < 8:
+                return jsonify({'error': 'Host password must be at least 8 characters.'}), 400
+            if pw in db.PLACEHOLDER_HOST_PASSWORDS:
+                return jsonify({'error': 'Pick a password other than the default.'}), 400
+            db.set_host_password(pw)
             session['is_host'] = True  # keep session valid after pw change
 
     if 'party_url' in data:
@@ -673,18 +890,18 @@ def api_host_users():
 @require_host
 def api_host_spotify_status():
     connected = sc.is_authenticated()
-    auth_url = sc.get_auth_url() if not connected else None
-    party_url = db.get_setting('party_url', os.environ.get('PARTY_URL', 'http://localhost:5000'))
+    auth_url = url_for('auth_spotify') if not connected else None
     fallback_id = db.get_setting('fallback_playlist_id', '')
     return jsonify({
         'connected': connected,
         'auth_url': auth_url,
-        'party_url': party_url,
+        **party_links(),
         'fallback_playlist_id': fallback_id,
         'fallback_playlist_name': db.get_setting('fallback_playlist_name', ''),
         'fallback_playlist_url': (f'https://open.spotify.com/playlist/{fallback_id}'
                                   if fallback_id else ''),
         'standing_down': qm.is_standing_down(),
+        'playback_issue': qm.get_playback_issue(),
         'idle_shutdown_hours': int(db.get_setting('idle_shutdown_hours', '6')),
         'preferred_device_id': db.get_setting('preferred_device_id', ''),
     })
@@ -697,8 +914,10 @@ def api_host_new_party():
     and previously-played songs stay permanently un-requestable."""
     data = request.get_json() or {}
     stats = db.start_new_party(clear_users=bool(data.get('clear_users')))
+    db.rotate_party_code()
+    session['party_code'] = db.get_setting('party_code')
     qm.resume_party()
-    return jsonify({'success': True, **stats})
+    return jsonify({'success': True, **stats, **party_links()})
 
 
 @app.route('/api/host/devices')
@@ -748,11 +967,14 @@ def api_host_queue():
     queue_id = db.add_to_queue(track_id, track_name, artist, album_art, duration_ms, 'host')
 
     if sc.is_authenticated():
-        playback = sc.get_current_playback()
+        # The worker's snapshot, not a fresh Spotify call per queued song.
+        playback = qm.get_cached_playback()
         if not playback or not playback.get('is_playing'):
             device_id = qm.get_party_device_id()
-            ok, _ = sc.play_track(f'spotify:track:{track_id}', device_id=device_id)
+            ok, err = sc.play_track(f'spotify:track:{track_id}', device_id=device_id)
+            qm.note_play_result(ok, err, device_id)
             if ok:
+                qm.invalidate_playback_cache()
                 db.update_queue_status(queue_id, 'playing')
 
     return jsonify({'success': True, 'queue_id': queue_id})
@@ -786,13 +1008,42 @@ def api_host_demo():
 # ---------------------------------------------------------------------------
 # Bootstrap
 # ---------------------------------------------------------------------------
+def config_problems():
+    """Settings that are fine on a laptop but unsafe once guests can reach the app."""
+    problems = []
+    secret = os.environ.get('FLASK_SECRET_KEY', '')
+    if not secret or secret in _PLACEHOLDER_SECRETS or len(secret) < 32:
+        problems.append(
+            "FLASK_SECRET_KEY is missing or too short; anyone could forge a host "
+            "session. Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\"")
+    if db.host_password_is_placeholder():
+        problems.append(
+            "The host password is still the default. Set HOST_PASSWORD in .env "
+            "(or change it in the host panel).")
+    return problems
+
+
 def create_app():
     db.init_db()
+    problems = config_problems()
+    for p in problems:
+        logger.warning(p)
+    if problems and not DEV_MODE:
+        raise SystemExit("Refusing to start with unsafe settings (set JUKEBOX_DEV=1 "
+                         "to override on a private machine).")
     qm.start_background_thread()
     return app
 
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
+    from waitress import serve
+
+    # Not 5000: macOS's AirPlay Receiver listens there and answers 403.
+    port = int(os.environ.get('PORT', 5001))
+    bind_host = os.environ.get('HOST') or ('127.0.0.1' if BEHIND_PROXY else '0.0.0.0')
     create_app()
-    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+    # Exactly ONE process. queue_manager keeps playback state in memory and its
+    # worker thread must run once; a second process would fight it over
+    # Spotify. Scale with threads (guests mostly poll), never with workers.
+    logger.info("Serving on http://%s:%s (behind proxy: %s)", bind_host, port, BEHIND_PROXY)
+    serve(app, host=bind_host, port=port, threads=16, ident='jukebox')

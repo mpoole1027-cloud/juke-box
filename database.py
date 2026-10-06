@@ -1,9 +1,17 @@
 import sqlite3
+import secrets
 import threading
 import os
 
-DB_PATH = os.path.join(os.path.dirname(__file__), 'jukebox.db')
+from werkzeug.security import generate_password_hash, check_password_hash
+
+DB_PATH = os.environ.get('JUKEBOX_DB') or os.path.join(os.path.dirname(__file__), 'jukebox.db')
 _db_lock = threading.Lock()
+
+# Passwords that must never guard a public party: the old built-in default and
+# the .env.example placeholder.
+DEFAULT_HOST_PASSWORD = 'party2024'
+PLACEHOLDER_HOST_PASSWORDS = (DEFAULT_HOST_PASSWORD, 'choose_a_password')
 
 
 def get_connection():
@@ -104,20 +112,85 @@ def init_db():
 
             # Insert default settings if not present
             defaults = [
-                ('downvote_threshold', '7'),
-                ('max_queue_per_user', '2'),
-                ('skip_ban_threshold', '2'),
-                ('host_password', os.environ.get('HOST_PASSWORD', 'party2024')),
-                ('party_url', os.environ.get('PARTY_URL', 'http://localhost:5000')),
+                # .env seeds these once; the host panel owns them after that.
+                ('downvote_threshold', os.environ.get('DOWNVOTE_THRESHOLD', '7')),
+                ('max_queue_per_user', os.environ.get('MAX_QUEUE_PER_USER', '2')),
+                ('skip_ban_threshold', os.environ.get('SKIP_BAN_THRESHOLD', '2')),
+                ('party_url', os.environ.get('PARTY_URL', 'http://localhost:5001')),
             ]
             for key, value in defaults:
                 cursor.execute(
                     "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
                     (key, value)
                 )
+            _ensure_host_password_hash(cursor)
+            cursor.execute(
+                "INSERT OR IGNORE INTO settings (key, value) VALUES ('party_code', ?)",
+                (generate_party_code(),))
             conn.commit()
         finally:
             conn.close()
+
+
+def _ensure_host_password_hash(cursor):
+    """Keep the host password only as a hash, migrating any plaintext copy.
+
+    HOST_PASSWORD seeds the hash once; after that the host panel owns it. The
+    exception is a hash that still matches the built-in default: a real
+    HOST_PASSWORD then replaces it, so setting the env var is always enough to
+    get off the default.
+    """
+    def value(key):
+        row = cursor.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else None
+
+    stored = value('host_password_hash')
+    legacy = value('host_password')
+    env_pw = os.environ.get('HOST_PASSWORD', '').strip()
+
+    seed = None
+    if stored is None:
+        if legacy and legacy != DEFAULT_HOST_PASSWORD:
+            seed = legacy
+        else:
+            seed = env_pw or legacy or DEFAULT_HOST_PASSWORD
+    elif env_pw and check_password_hash(stored, DEFAULT_HOST_PASSWORD):
+        seed = env_pw
+
+    if seed:
+        cursor.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('host_password_hash', ?)",
+            (generate_password_hash(seed),))
+    cursor.execute("DELETE FROM settings WHERE key = 'host_password'")
+
+
+# No 0/O or 1/I/L, so a code read off a screen can be typed back reliably.
+PARTY_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+PARTY_CODE_LENGTH = 6
+
+
+def generate_party_code():
+    return ''.join(secrets.choice(PARTY_CODE_ALPHABET) for _ in range(PARTY_CODE_LENGTH))
+
+
+def rotate_party_code():
+    """New code for a new party, so links from earlier parties stop working."""
+    code = generate_party_code()
+    set_setting('party_code', code)
+    return code
+
+
+def check_host_password(password):
+    stored = get_setting('host_password_hash')
+    return bool(stored and password) and check_password_hash(stored, password)
+
+
+def set_host_password(password):
+    set_setting('host_password_hash', generate_password_hash(password))
+
+
+def host_password_is_placeholder():
+    return any(check_host_password(pw) for pw in PLACEHOLDER_HOST_PASSWORDS)
 
 
 def get_setting(key, default=None):
@@ -444,15 +517,17 @@ def get_upvote_count(queue_id):
             conn.close()
 
 
-def user_has_upvoted(queue_id, user_id):
+def get_user_upvoted_ids(user_id):
+    """IDs of every queue item this user has upvoted, in one query. /api/status
+    used to ask per queued song, which with a long queue and many guests
+    polling was most of the server's work."""
     with _db_lock:
         conn = get_connection()
         try:
-            row = conn.execute(
-                "SELECT 1 FROM upvotes WHERE queue_id = ? AND user_id = ?",
-                (queue_id, user_id)
-            ).fetchone()
-            return row is not None
+            rows = conn.execute(
+                "SELECT queue_id FROM upvotes WHERE user_id = ?", (user_id,)
+            ).fetchall()
+            return {r['queue_id'] for r in rows}
         finally:
             conn.close()
 

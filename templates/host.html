@@ -65,6 +65,7 @@
           <button id="clear-queue-btn" class="btn btn-ghost btn-sm">🗑 CLEAR QUEUE</button>
           <button id="new-party-btn" class="btn btn-primary btn-sm">🎉 NEW PARTY</button>
         </div>
+        <div id="playback-issue-banner" class="hidden" role="alert" style="margin-top:10px;padding:8px 10px;border:1px solid var(--warning);border-radius:6px;font-size:0.76rem;color:var(--warning)"></div>
         <div id="standby-banner" class="hidden" style="margin-top:10px;padding:8px 10px;border:1px solid var(--warning);border-radius:6px;font-size:0.76rem;color:var(--warning)">
           Standing down — idle too long, not controlling Spotify.
           <button id="resume-party-btn" class="btn btn-ghost btn-sm" style="margin-left:8px">RESUME</button>
@@ -91,7 +92,13 @@
         <p style="color:var(--text-dim);font-size:0.75rem;margin-bottom:10px">Guests scan this to join the party</p>
         <img id="qr-img" src="/qr" alt="QR Code"
           style="width:160px;height:160px;border:3px solid var(--primary);border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,0.3)">
-        <div id="party-url-display" style="margin-top:8px;font-size:0.72rem;color:var(--accent)"></div>
+        <div id="party-url-display" style="margin-top:8px;font-size:0.72rem;color:var(--accent);word-break:break-all"></div>
+        <div style="margin-top:6px;font-size:0.8rem">Party code: <strong id="party-code-display" style="letter-spacing:0.15em"></strong></div>
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:10px">
+          <button id="copy-invite-btn" class="btn btn-cyan btn-sm" type="button">COPY INVITE LINK</button>
+          <a id="tv-link" class="btn btn-sm" href="/tv" target="_blank" rel="noopener">OPEN TV SCREEN</a>
+        </div>
+        <p style="color:var(--text-dim);font-size:0.7rem;margin-top:8px">Starting a new party changes the code, so old links stop working.</p>
       </div>
 
     </div><!-- end sidebar -->
@@ -225,7 +232,7 @@
             <label style="font-size:0.78rem;color:var(--text-dim);display:block;margin-bottom:6px">
               PARTY URL (for QR code)
             </label>
-            <input id="party-url-input" type="text" class="input-field" placeholder="http://192.168.1.X:5000" style="margin-bottom:0">
+            <input id="party-url-input" type="text" class="input-field" placeholder="https://party.example.com" style="margin-bottom:0">
           </div>
 
           <!-- Playback device -->

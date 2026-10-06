@@ -55,7 +55,8 @@ class FakeSpotify:
         if self.playing is None:
             return None
         return {
-            'item': {'id': self.playing, 'name': self.playing, 'duration_ms': self.duration},
+            'item': {'id': self.playing, 'name': self.playing, 'duration_ms': self.duration,
+                     'artists': [{'name': 'Artist'}], 'album': {'images': []}},
             'is_playing': self.is_playing,
             'progress_ms': self.progress,
             'context': {'uri': f'spotify:playlist:{self.context}'} if self.context else None,
@@ -103,6 +104,24 @@ class FakeSpotify:
         return self.devices[0]['id'] if self.devices else None
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limits():
+    """Limiter counters and the playback snapshot are process-global; don't
+    let one test's state leak into the next."""
+    def reset():
+        mod = sys.modules.get('app')
+        if mod is not None:
+            mod.limiter.reset()
+        # The playback snapshot is process-global too.
+        qm_mod = sys.modules.get('queue_manager')
+        if qm_mod is not None:
+            qm_mod._snapshot = None
+            qm_mod._playback_issue = None
+    reset()
+    yield
+    reset()
+
+
 @pytest.fixture
 def db(monkeypatch):
     import database
@@ -121,6 +140,8 @@ def qm(db, monkeypatch):
     monkeypatch.setattr(queue_manager, '_last_playing_queue_id', None, raising=False)
     monkeypatch.setattr(queue_manager, '_current_is_ours', False, raising=False)
     monkeypatch.setattr(queue_manager, '_standing_down', False, raising=False)
+    monkeypatch.setattr(queue_manager, '_snapshot', None, raising=False)
+    monkeypatch.setattr(queue_manager, '_playback_issue', None, raising=False)
     queue_manager.note_activity()
     queue_manager.fake = fake
     return queue_manager

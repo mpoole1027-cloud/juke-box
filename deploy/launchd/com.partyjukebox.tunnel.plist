@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: deploy/install.sh fills in __CLOUDFLARED__ and __JUKEBOX_DIR__. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.partyjukebox.tunnel</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__CLOUDFLARED__</string>
+    <string>tunnel</string>
+    <string>--no-autoupdate</string>
+    <string>--config</string>
+    <string>__JUKEBOX_DIR__/deploy/cloudflared/config.yml</string>
+    <string>run</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>StandardOutPath</key>
+  <string>__JUKEBOX_DIR__/logs/tunnel.log</string>
+  <key>StandardErrorPath</key>
+  <string>__JUKEBOX_DIR__/logs/tunnel.log</string>
+</dict>
+</plist>
