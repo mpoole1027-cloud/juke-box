@@ -97,6 +97,7 @@ It serves with waitress on port 5001 by default, as **one process**: the queue m
 | `/host` | Host control panel: QR code, party code, invite link, TV link |
 | `/?p=CODE` | Guest jukebox (the QR code and invite link open this) |
 | `/tv?p=CODE` | TV display (use **Open TV screen** in the host panel) |
+| `/host/photos` | Review disposable camera photos after the party |
 | `/api/now` | Just the current track, for party-lights and other local tools |
 | `/healthz` | Health check used by `deploy/preflight.py` |
 
@@ -118,6 +119,15 @@ It serves with waitress on port 5001 by default, as **one process**: the queue m
 ### Bans
 - If a guest's song gets skipped by downvotes **twice**, they are automatically banned from queuing for the rest of the night
 - Banned guests see a message on their screen and their anonymous nickname (e.g. "Disco Wombat") is revealed in the Hall of Shame — visible to everyone including on the TV display
+
+### Disposable camera
+- Guests open the camera from the jukebox page and take photos through a live viewfinder
+- A shot is never shown back to them: it goes straight to the Mac to "develop" until after the party
+- Each guest gets a roll of film (24 shots by default, changeable in the host panel) per party
+- Shots taken while the phone is offline wait on the phone and upload once it reconnects
+- Uploads are re-encoded on arrival, which strips metadata like GPS location
+- After the party, review them at `/host/photos` and export the approved ones to Google Drive or Cloudflare Pages (see [deploy/README.md](deploy/README.md))
+- The camera needs the https (tunnel) address; phones block it on a plain `http://` local IP
 
 ### For the host
 - Log into `/host` to see all guests, their stats, and ban/unban anyone manually

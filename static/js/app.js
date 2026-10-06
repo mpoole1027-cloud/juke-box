@@ -521,6 +521,7 @@ async function pollStatus() {
     renderQueue(data.queue);
     renderBanned(data.banned_users);
     checkMySongTransitions(data);
+    if (typeof Camera !== 'undefined') Camera.update(data.camera);
 
     // Spotify not connected notice
     if (!data.spotify_connected) {

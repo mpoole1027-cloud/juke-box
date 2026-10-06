@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="{{ ui_theme }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Photo Review</title>
+  <link rel="stylesheet" href="/static/css/jukebox.css">
+  <link id="classic-css" rel="stylesheet" href="/static/css/classic.css"{% if ui_theme != 'classic' %} disabled{% endif %}>
+  <link rel="stylesheet" href="/static/css/photos.css">
+</head>
+<body>
+
+<div id="toast-container" class="toast-container"></div>
+
+<!-- Login (same host password as /host) -->
+<div id="login-view" class="host-login-wrap hidden">
+  <div class="host-login-box card">
+    <h1>PHOTO REVIEW</h1>
+    <p style="color:var(--text-dim);font-size:0.82rem;margin-bottom:20px">Enter your host password to review tonight's photos</p>
+    <form id="login-form">
+      <input id="login-password" type="password" class="input-field" placeholder="Host password..." autocomplete="current-password" required>
+      <div id="login-error" class="hidden" style="color:var(--warning);font-size:0.82rem;margin-bottom:10px"></div>
+      <button type="submit" class="btn btn-primary w-full">LOG IN</button>
+    </form>
+  </div>
+</div>
+
+<div id="review-view" class="hidden">
+  <header class="review-header">
+    <h1>📸 Photo Review</h1>
+    <div class="review-header-controls">
+      <label for="party-select" style="font-size:0.78rem;color:var(--text-dim)">Party</label>
+      <select id="party-select" class="input-field"></select>
+      <a href="/host" class="btn btn-ghost btn-sm">HOST PANEL</a>
+    </div>
+  </header>
+
+  <div class="review-toolbar">
+    <div class="review-tabs" role="tablist">
+      <button class="review-tab active" data-status="pending" role="tab">Pending <span></span></button>
+      <button class="review-tab" data-status="approved" role="tab">Approved <span></span></button>
+      <button class="review-tab" data-status="rejected" role="tab">Rejected <span></span></button>
+      <button class="review-tab" data-status="" role="tab">All <span></span></button>
+    </div>
+    <button id="approve-all-btn" class="btn btn-cyan btn-sm" type="button">APPROVE ALL PENDING</button>
+  </div>
+
+  <p class="review-hint">
+    Click a photo to see it full size. There, <kbd>A</kbd> approves, <kbd>R</kbd> rejects,
+    <kbd>←</kbd>/<kbd>→</kbd> move, <kbd>Esc</kbd> closes. Only approved photos get exported.
+  </p>
+
+  <div id="photo-grid" class="photo-grid"></div>
+  <div id="empty-msg" class="review-empty hidden"></div>
+
+  <div class="card review-export">
+    <div class="section-header">
+      <h2>SHARE THE APPROVED PHOTOS</h2>
+      <div class="line"></div>
+    </div>
+    <p>When you're done reviewing, build the gallery on this machine:</p>
+    <pre id="export-cmd"></pre>
+    <p>It writes a folder with the approved photos and a ready-made gallery page. Upload the
+      folder to Google Drive, or add <code>--deploy-cloudflare PROJECT</code> to publish the
+      gallery to Cloudflare Pages. See <code>deploy/README.md</code>.</p>
+  </div>
+</div>
+
+<!-- Full-size viewer -->
+<div id="viewer" class="viewer hidden" role="dialog" aria-label="Photo viewer">
+  <img id="viewer-img" alt="">
+  <div class="viewer-bar">
+    <span id="viewer-meta"></span>
+    <div class="viewer-actions">
+      <button id="viewer-reject" class="btn btn-danger btn-sm" type="button">✕ REJECT (R)</button>
+      <button id="viewer-approve" class="btn btn-cyan btn-sm" type="button">✓ APPROVE (A)</button>
+      <button id="viewer-close" class="btn btn-ghost btn-sm" type="button">CLOSE</button>
+    </div>
+  </div>
+  <button id="viewer-prev" class="viewer-nav prev" type="button" aria-label="Previous">‹</button>
+  <button id="viewer-next" class="viewer-nav next" type="button" aria-label="Next">›</button>
+</div>
+
+<script src="/static/js/photos.js"></script>
+</body>
+</html>

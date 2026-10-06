@@ -70,7 +70,41 @@ phone ──https──▶ party.example.com ──Cloudflare──▶ cloudflar
 5. Put the QR code (or **Copy invite link**) where guests can see it, and open
    **Open TV screen** on the TV.
 
+## After the party: share the photos
+
+Guests' disposable camera shots wait in `photos/` on the Mac until you review
+them. Nothing is shared until you approve it.
+
+1. Open `https://party.example.com/host/photos` (same host password). Click a
+   photo to see it full size. **A** approves it, **R** rejects it, and the arrow
+   keys move between photos.
+2. Build the gallery from the approved photos:
+   ```sh
+   .venv/bin/python deploy/export_photos.py --title "Halloween 2026"
+   ```
+   It writes `exports/<party code>-photos/` with the photos, an `index.html`
+   gallery and `all-photos.zip`. Approved photos only, with all metadata
+   (including GPS location) already removed when they were uploaded.
+3. Share it, either way:
+   - **Google Drive:** upload the `photos/` folder (or the zip) and share the
+     folder link. It works without the Mac staying on.
+   - **Cloudflare Pages:** run `npx wrangler login` once, then
+     ```sh
+     .venv/bin/python deploy/export_photos.py --title "Halloween 2026" --deploy-cloudflare party-photos-2026
+     ```
+     and send the `https://party-photos-2026.pages.dev` link it prints. Anyone
+     with the link can see the gallery, and it asks search engines not to
+     index it. Pick a project name that's hard to guess.
+
+Rerun the export after changing a review and the gallery is rebuilt from
+scratch. To pull a photo after sharing it, reject it, export again and
+re-upload or redeploy.
+
 ## Things to know
+
+- **The camera needs the https link.** Phones only allow a web page to use the
+  camera over HTTPS, so guests on the tunnel address can shoot. Guests on a
+  plain `http://192.168.x.x` local address can't, and are told so.
 
 - **The party code is the key.** The QR and invite link carry it; the plain
   URL alone only shows what's playing. Starting a new party changes it, so a

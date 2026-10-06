@@ -20,6 +20,7 @@ from flask_limiter.util import get_remote_address
 load_dotenv()
 
 import database as db
+import photos
 import spotify_client as sc
 import queue_manager as qm
 
@@ -52,6 +53,8 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY') or _DEV_SECRET
 # Long enough that a guest who closes the tab keeps their identity all night.
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=3)
+# Request bodies are small JSON except camera uploads; a phone JPEG is a few MB.
+app.config['MAX_CONTENT_LENGTH'] = 15 * 1024 * 1024
 
 # BEHIND_PROXY=1 when guests arrive through a tunnel or reverse proxy (e.g.
 # cloudflared). It trusts one hop of X-Forwarded-* so client IPs (rate limits)
@@ -85,6 +88,11 @@ limiter = Limiter(key_func=_rate_key, app=app, storage_uri='memory://',
 def _rate_limited(e):
     return jsonify({'error': 'Slow down a little and try again in a minute.',
                     'code': 'rate_limited'}), 429
+
+
+@app.errorhandler(413)
+def _too_large(e):
+    return jsonify({'error': 'That upload is too large.', 'code': 'too_large'}), 413
 
 
 # ---------------------------------------------------------------------------
@@ -240,6 +248,17 @@ def _resolve_current_track():
             current_track['dedication'] = playing_queue_item.get('dedication')
 
     return current_track, playing_queue_item, current_queue_id
+
+
+def _camera_state(user_id):
+    """What the guest's disposable camera shows: on/off and film left tonight."""
+    total = int(db.get_setting('camera_shots_per_guest', '24'))
+    used = db.count_user_photos(user_id, db.get_setting('party_code', '')) if user_id else 0
+    return {
+        'enabled': db.get_setting('camera_enabled', '1') == '1',
+        'shots_total': total,
+        'shots_left': max(0, total - used),
+    }
 
 
 def _guest_issue():
@@ -455,6 +474,7 @@ def api_status():
         'spotify_connected': sc.is_authenticated(),
         'playback_issue': _guest_issue(),
         'ui_theme': _ui_theme(),
+        'camera': _camera_state(user_id),
     })
 
 
@@ -703,6 +723,58 @@ def api_remove_queue_item(queue_id):
     return jsonify({'success': True})
 
 
+_SHOT_ID_CHARS = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-')
+
+
+@app.route('/api/photos', methods=['POST'])
+@limiter.limit('20 per minute')
+@require_party
+def api_upload_photo():
+    """A disposable camera shot. The guest never sees it again: it waits for
+    the host's review, and only approved shots ever leave this machine."""
+    user_id = get_user_id_from_request()
+    user = get_or_create_user(user_id)
+    if not user:
+        return jsonify({'error': 'Invalid user ID'}), 400
+    if user['is_banned']:
+        return jsonify({'error': "Silenced guests can't use the camera.", 'code': 'banned'}), 403
+
+    camera = _camera_state(user_id)
+    if not camera['enabled']:
+        return jsonify({'error': 'The camera is switched off.', 'code': 'camera_off'}), 403
+
+    shot_id = (request.form.get('shot_id') or '').strip()
+    if not 8 <= len(shot_id) <= 64 or not set(shot_id) <= _SHOT_ID_CHARS:
+        return jsonify({'error': 'Missing shot ID'}), 400
+
+    # A retry of a shot we already have: say yes again without reprocessing,
+    # so the phone can drop it from its outbox.
+    if db.has_photo_shot(user_id, shot_id):
+        return jsonify({'success': True, 'duplicate': True, 'shots_left': camera['shots_left']})
+    if camera['shots_left'] <= 0:
+        return jsonify({'error': "You're out of film!", 'code': 'out_of_film', 'shots_left': 0}), 409
+
+    upload = request.files.get('photo')
+    if not upload:
+        return jsonify({'error': 'No photo attached'}), 400
+    try:
+        jpeg, width, height = photos.process(upload.read())
+    except photos.PhotoError as e:
+        return jsonify({'error': str(e), 'code': 'bad_photo'}), 400
+
+    party_code = db.get_setting('party_code', '')
+    filename = photos.save(jpeg, party_code)
+    result, _ = db.add_photo(user_id, shot_id, party_code, filename, width, height,
+                             limit=camera['shots_total'])
+    if result != 'ok':
+        photos.delete(filename)
+    if result == 'full':
+        return jsonify({'error': "You're out of film!", 'code': 'out_of_film', 'shots_left': 0}), 409
+
+    left = _camera_state(user_id)['shots_left']
+    return jsonify({'success': True, 'duplicate': result == 'duplicate', 'shots_left': left})
+
+
 @app.route('/api/tv')
 @require_party
 def api_tv():
@@ -824,6 +896,18 @@ def api_host_settings():
         if not 0 <= val <= 72:
             return jsonify({'error': 'Idle shutdown must be between 0 and 72 hours (0 disables).'}), 400
         db.set_setting('idle_shutdown_hours', val)
+
+    if 'camera_enabled' in data:
+        db.set_setting('camera_enabled', '1' if data['camera_enabled'] else '0')
+
+    if 'camera_shots_per_guest' in data:
+        try:
+            val = int(data['camera_shots_per_guest'])
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Shots per guest must be a whole number.'}), 400
+        if not 1 <= val <= 100:
+            return jsonify({'error': 'Shots per guest must be between 1 and 100.'}), 400
+        db.set_setting('camera_shots_per_guest', val)
 
     if 'fallback_playlist_url' in data:
         raw = (data['fallback_playlist_url'] or '').strip()
@@ -978,6 +1062,76 @@ def api_host_queue():
                 db.update_queue_status(queue_id, 'playing')
 
     return jsonify({'success': True, 'queue_id': queue_id})
+
+
+@app.route('/host/photos')
+def host_photos():
+    """Photo review page. The page itself is public like /host; its API isn't."""
+    return render_template('photos.html', ui_theme=_ui_theme())
+
+
+@app.route('/api/host/camera')
+@require_host
+def api_host_camera():
+    """Camera settings plus photo counts for every party, for the host panel."""
+    return jsonify({
+        'enabled': db.get_setting('camera_enabled', '1') == '1',
+        'shots_per_guest': int(db.get_setting('camera_shots_per_guest', '24')),
+        'current_party': db.get_setting('party_code', ''),
+        'parties': db.photo_parties(),
+    })
+
+
+@app.route('/api/host/photos')
+@require_host
+def api_host_photos():
+    party = request.args.get('party') or db.get_setting('party_code', '')
+    status = request.args.get('status') or None
+    if status and status not in db.PHOTO_STATUSES:
+        return jsonify({'error': 'Unknown status'}), 400
+    return jsonify({
+        'party': party,
+        'photos': [
+            {k: p[k] for k in ('id', 'nickname', 'user_id', 'status', 'created_at', 'width', 'height')}
+            for p in db.list_photos(party_code=party, status=status)
+        ],
+    })
+
+
+@app.route('/api/host/photos/<int:photo_id>/image')
+@require_host
+def api_host_photo_image(photo_id):
+    photo = db.get_photo(photo_id)
+    if not photo:
+        return jsonify({'error': 'Photo not found'}), 404
+    try:
+        path = photos.path_for(photo['filename'])
+    except photos.PhotoError:
+        return jsonify({'error': 'Photo not found'}), 404
+    if not os.path.exists(path):
+        return jsonify({'error': 'Photo file is missing'}), 404
+    res = send_file(path, mimetype='image/jpeg')
+    # Host-only content: never let a browser or proxy cache keep a copy.
+    res.headers['Cache-Control'] = 'private, no-store'
+    return res
+
+
+@app.route('/api/host/photos/review', methods=['POST'])
+@require_host
+def api_host_photo_review():
+    """Approve, reject or un-review photos: {"ids": [...], "status": "approved"}."""
+    data = request.get_json() or {}
+    status = data.get('status')
+    ids = data.get('ids')
+    if status not in db.PHOTO_STATUSES:
+        return jsonify({'error': 'Status must be pending, approved or rejected.'}), 400
+    if not isinstance(ids, list) or not ids:
+        return jsonify({'error': 'No photos selected.'}), 400
+    try:
+        changed = db.set_photo_status(ids, status)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Photo IDs must be numbers.'}), 400
+    return jsonify({'success': True, 'changed': changed})
 
 
 @app.route('/api/host/demo', methods=['POST'])

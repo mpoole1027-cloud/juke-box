@@ -104,6 +104,22 @@ def init_db():
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
                 );
+
+                -- Disposable camera shots. party_code is the party they were
+                -- taken at (it rotates per party), shot_id is the phone's own
+                -- ID for the shot so a retried upload is stored only once.
+                CREATE TABLE IF NOT EXISTS photos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    shot_id TEXT NOT NULL,
+                    party_code TEXT NOT NULL,
+                    filename TEXT NOT NULL,
+                    width INTEGER,
+                    height INTEGER,
+                    status TEXT DEFAULT 'pending',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, shot_id)
+                );
             """)
 
             _add_sort_order_column(conn)
@@ -117,6 +133,8 @@ def init_db():
                 ('max_queue_per_user', os.environ.get('MAX_QUEUE_PER_USER', '2')),
                 ('skip_ban_threshold', os.environ.get('SKIP_BAN_THRESHOLD', '2')),
                 ('party_url', os.environ.get('PARTY_URL', 'http://localhost:5001')),
+                ('camera_enabled', '1'),
+                ('camera_shots_per_guest', os.environ.get('CAMERA_SHOTS_PER_GUEST', '24')),
             ]
             for key, value in defaults:
                 cursor.execute(
@@ -775,5 +793,130 @@ def get_or_create_host_user():
                 "INSERT OR IGNORE INTO users (user_id, nickname) VALUES ('host', 'DJ Host')"
             )
             conn.commit()
+        finally:
+            conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Disposable camera
+# ---------------------------------------------------------------------------
+PHOTO_STATUSES = ('pending', 'approved', 'rejected')
+
+
+def add_photo(user_id, shot_id, party_code, filename, width, height, limit):
+    """Record a shot unless the guest is out of film.
+
+    Returns ('ok', id), ('duplicate', id) when this shot was already stored (a
+    retried upload), or ('full', None). The count and the insert share one lock
+    so two uploads racing for the last shot can't both get it.
+    """
+    with _db_lock:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT id FROM photos WHERE user_id = ? AND shot_id = ?",
+                (user_id, shot_id)).fetchone()
+            if row:
+                return 'duplicate', row['id']
+            used = conn.execute(
+                "SELECT COUNT(*) FROM photos WHERE user_id = ? AND party_code = ?",
+                (user_id, party_code)).fetchone()[0]
+            if used >= limit:
+                return 'full', None
+            cursor = conn.execute(
+                "INSERT INTO photos (user_id, shot_id, party_code, filename, width, height) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, shot_id, party_code, filename, width, height))
+            conn.commit()
+            return 'ok', cursor.lastrowid
+        finally:
+            conn.close()
+
+
+def has_photo_shot(user_id, shot_id):
+    with _db_lock:
+        conn = get_connection()
+        try:
+            return conn.execute(
+                "SELECT 1 FROM photos WHERE user_id = ? AND shot_id = ?",
+                (user_id, shot_id)).fetchone() is not None
+        finally:
+            conn.close()
+
+
+def count_user_photos(user_id, party_code):
+    with _db_lock:
+        conn = get_connection()
+        try:
+            return conn.execute(
+                "SELECT COUNT(*) FROM photos WHERE user_id = ? AND party_code = ?",
+                (user_id, party_code)).fetchone()[0]
+        finally:
+            conn.close()
+
+
+def get_photo(photo_id):
+    with _db_lock:
+        conn = get_connection()
+        try:
+            row = conn.execute("SELECT * FROM photos WHERE id = ?", (photo_id,)).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+
+def list_photos(party_code=None, status=None):
+    """Photos oldest first, with the photographer's nickname."""
+    sql = ("SELECT p.*, COALESCE(u.nickname, '?') AS nickname "
+           "FROM photos p LEFT JOIN users u ON u.user_id = p.user_id WHERE 1=1")
+    args = []
+    if party_code:
+        sql += " AND p.party_code = ?"
+        args.append(party_code)
+    if status:
+        sql += " AND p.status = ?"
+        args.append(status)
+    sql += " ORDER BY p.created_at, p.id"
+    with _db_lock:
+        conn = get_connection()
+        try:
+            return [dict(r) for r in conn.execute(sql, args).fetchall()]
+        finally:
+            conn.close()
+
+
+def set_photo_status(photo_ids, status):
+    """Set the review status of one or more photos. Returns how many changed."""
+    if status not in PHOTO_STATUSES:
+        raise ValueError(f'Unknown photo status: {status}')
+    ids = [int(i) for i in photo_ids]
+    if not ids:
+        return 0
+    with _db_lock:
+        conn = get_connection()
+        try:
+            cursor = conn.execute(
+                f"UPDATE photos SET status = ? WHERE id IN ({','.join('?' * len(ids))})",
+                (status, *ids))
+            conn.commit()
+            return cursor.rowcount
+        finally:
+            conn.close()
+
+
+def photo_parties():
+    """Every party that has photos, newest first, with counts by status."""
+    with _db_lock:
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT party_code, MIN(created_at) AS first_shot, "
+                "MAX(created_at) AS last_shot, COUNT(*) AS total, "
+                "SUM(status = 'pending') AS pending, "
+                "SUM(status = 'approved') AS approved, "
+                "SUM(status = 'rejected') AS rejected "
+                "FROM photos GROUP BY party_code ORDER BY MAX(created_at) DESC"
+            ).fetchall()
+            return [dict(r) for r in rows]
         finally:
             conn.close()

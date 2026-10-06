@@ -1,0 +1,160 @@
+/* ================================================================
+   CAMERA.CSS  –  Disposable camera (guest page)
+
+   The card on the page follows the active theme through its tokens.
+   The full-screen viewfinder is always dark, like looking through a
+   real camera, so it reads the same in both themes.
+   ================================================================ */
+
+/* ── Card ── */
+.camera-card-body {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.camera-counter {
+  flex: none;
+  width: 76px;
+  padding: 8px 0 6px;
+  border: 2px solid var(--primary);
+  border-radius: 10px;
+  text-align: center;
+  line-height: 1;
+}
+
+.camera-counter span {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.camera-counter small {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+.camera-status {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+}
+
+/* ── Full-screen viewfinder ── */
+body.camera-open { overflow: hidden; }
+
+.camera-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  background: #0d0b09;
+  color: #f2ece0;
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+}
+
+.camera-viewfinder {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  margin: 16px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #000;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.08);
+}
+
+.camera-viewfinder video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Front camera: show it like a mirror, the way phones do. */
+.camera-viewfinder video.mirrored { transform: scaleX(-1); }
+
+.camera-flash {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.camera-flash.firing { animation: camera-flash 0.45s ease-out; }
+
+@keyframes camera-flash {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.camera-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: 4px 24px 8px;
+}
+
+.camera-side-btn {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: #f2ece0;
+  font-size: 1.3rem;
+  cursor: pointer;
+}
+
+.camera-shutter {
+  width: 78px;
+  height: 78px;
+  border-radius: 50%;
+  border: 5px solid #f2ece0;
+  background: #c1573a;
+  cursor: pointer;
+  transition: transform 0.08s ease;
+}
+
+.camera-shutter:active:not(:disabled) { transform: scale(0.92); }
+
+.camera-shutter:disabled {
+  background: #5a4f45;
+  cursor: default;
+}
+
+.camera-frame-counter {
+  text-align: center;
+  font-size: 0.78rem;
+  color: rgba(242, 236, 224, 0.7);
+  padding: 4px 16px 16px;
+}
+
+.camera-frame-counter span:not(.camera-wind) {
+  font-weight: 700;
+  color: #f2ece0;
+}
+
+.camera-wind {
+  display: inline-block;
+  margin-right: 4px;
+}
+
+.camera-wind.winding { animation: camera-wind 1.2s linear; }
+
+@keyframes camera-wind {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .camera-flash.firing { animation-duration: 0.2s; }
+  .camera-wind.winding { animation: none; }
+}
