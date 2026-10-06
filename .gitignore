@@ -13,3 +13,5 @@ logs/
 
 # Local tunnel config (holds your tunnel ID)
 deploy/cloudflared/config.yml
+loadtest/*.log
+loadtest/*.prof
