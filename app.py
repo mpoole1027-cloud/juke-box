@@ -504,6 +504,9 @@ def api_search():
         return jsonify({'error': 'Spotify not connected', 'tracks': []}), 503
 
     tracks = sc.search_tracks(q, limit=10)
+    if not tracks and sc.rate_limited_for():
+        return jsonify({'error': 'Spotify is busy. Try searching again in a minute.',
+                        'tracks': []}), 503
     return jsonify({'tracks': tracks})
 
 
@@ -549,7 +552,8 @@ def api_queue():
     queue_id = db.add_to_queue(track_id, track_name, artist, album_art, duration_ms, user_id, dedication=ded)
 
     if sc.is_authenticated():
-        playback = sc.get_current_playback()
+        # The worker's snapshot, not a fresh Spotify call per queued song.
+        playback = qm.get_cached_playback()
         if not playback or not playback.get('is_playing'):
             device_id = qm.get_party_device_id()
             ok, err = sc.play_track(f'spotify:track:{track_id}', device_id=device_id)
@@ -963,7 +967,8 @@ def api_host_queue():
     queue_id = db.add_to_queue(track_id, track_name, artist, album_art, duration_ms, 'host')
 
     if sc.is_authenticated():
-        playback = sc.get_current_playback()
+        # The worker's snapshot, not a fresh Spotify call per queued song.
+        playback = qm.get_cached_playback()
         if not playback or not playback.get('is_playing'):
             device_id = qm.get_party_device_id()
             ok, err = sc.play_track(f'spotify:track:{track_id}', device_id=device_id)

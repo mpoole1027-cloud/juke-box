@@ -43,6 +43,10 @@ ISSUE_MESSAGES = {
     'spotify_not_connected': (
         "Spotify isn't connected. Use Connect Spotify in the host panel.",
         "The host is reconnecting Spotify. Hang tight."),
+    'spotify_rate_limited': (
+        "Spotify is rate-limiting the jukebox, so searches and song changes "
+        "pause for a minute or two. It resumes on its own.",
+        "Spotify needs a breather. Back in a minute..."),
     'spotify_unreachable': (
         "Can't reach Spotify. Retrying every few seconds.",
         "Spotify isn't responding. Retrying..."),
@@ -56,7 +60,8 @@ ISSUE_MESSAGES = {
 }
 # Issues the worker clears or retries on its own, vs. ones only a successful
 # play clears.
-_SPOTIFY_STATE_ISSUES = ('spotify_not_connected', 'spotify_unreachable')
+_SPOTIFY_STATE_ISSUES = ('spotify_not_connected', 'spotify_rate_limited',
+                         'spotify_unreachable')
 _PLAY_ISSUES = ('no_device', 'play_failed')
 
 
@@ -365,6 +370,8 @@ def background_worker():
             if state['status'] == sc.PLAYBACK_ERROR:
                 if state.get('reason') == 'not_authenticated':
                     _set_issue('spotify_not_connected')
+                elif state.get('reason') == 'rate_limited':
+                    _set_issue('spotify_rate_limited')
                 else:
                     _set_issue('spotify_unreachable')
                 # We could not find out what Spotify is doing. Say nothing,
