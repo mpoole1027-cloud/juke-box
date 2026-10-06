@@ -522,6 +522,7 @@ async function pollStatus() {
     renderBanned(data.banned_users);
     checkMySongTransitions(data);
     if (typeof Camera !== 'undefined') Camera.update(data.camera);
+    if (typeof Costume !== 'undefined') Costume.update(data.costume);
 
     // Spotify not connected notice
     if (!data.spotify_connected) {

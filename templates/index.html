@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/static/css/jukebox.css">
   <link id="classic-css" rel="stylesheet" href="/static/css/classic.css"{% if ui_theme != 'classic' %} disabled{% endif %}>
   <link rel="stylesheet" href="/static/css/camera.css">
+  <link rel="stylesheet" href="/static/css/costume.css">
   <meta name="theme-color" content="{{ '#1a0c08' if ui_theme == 'classic' else '#f5efe1' }}">
 </head>
 <body>
@@ -63,7 +64,7 @@
   <div id="ban-banner" class="ban-banner hidden">
     <h2>🚫 SILENCED!</h2>
     <p>You've been SILENCED, <strong id="ban-nickname"></strong>!<br>Your terrible taste has been noted.</p>
-    <p style="margin-top:8px;font-size:0.78rem;color:var(--warning)">You are no longer allowed to queue songs or use the camera.</p>
+    <p style="margin-top:8px;font-size:0.78rem;color:var(--warning)">You are no longer allowed to queue songs, use the camera or vote for costumes.</p>
   </div>
 
   <!-- Main content (hidden when banned) -->
@@ -172,6 +173,33 @@
       </div>
     </div>
 
+    <!-- Costume contest (shown once the host opens it) -->
+    <div id="costume-card" class="card costume-card hidden">
+      <div class="section-header">
+        <h2>COSTUME CONTEST</h2>
+        <div class="line"></div>
+      </div>
+
+      <div id="costume-open" class="hidden">
+        <form id="costume-entry-form" class="costume-entry-form">
+          <label for="costume-input" id="costume-entry-label" class="costume-label">What did you come as? Enter the contest:</label>
+          <div class="costume-entry-row">
+            <input id="costume-input" class="search-input" type="text" maxlength="40" autocomplete="off"
+              placeholder="e.g. Morticia Addams" enterkeyhint="done">
+            <button id="costume-save-btn" class="btn btn-primary btn-sm" type="submit">ENTER</button>
+          </div>
+          <button id="costume-withdraw-btn" class="costume-link hidden" type="button">Withdraw my entry</button>
+        </form>
+        <p class="costume-label">Vote for your favorite. You can change your vote until voting closes.</p>
+        <div id="costume-entries" class="costume-entries"></div>
+      </div>
+
+      <div id="costume-closed" class="hidden">
+        <p id="costume-my-result" class="costume-label"></p>
+        <div id="costume-results" class="costume-entries"></div>
+      </div>
+    </div>
+
     <!-- Up Next queue -->
     <div class="card">
       <div class="section-header">
@@ -222,5 +250,6 @@
 
 <script src="/static/js/app.js"></script>
 <script src="/static/js/camera.js"></script>
+<script src="/static/js/costume.js"></script>
 </body>
 </html>

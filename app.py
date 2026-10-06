@@ -6,6 +6,7 @@ import json
 import random
 import io
 import logging
+import time
 from datetime import timedelta
 from functools import wraps
 
@@ -261,6 +262,69 @@ def _camera_state(user_id):
     }
 
 
+COSTUME_MAX_LEN = 40
+
+
+def _costume_phase():
+    phase = db.get_setting('costume_phase', 'off')
+    return phase if phase in db.COSTUME_PHASES else 'off'
+
+
+def _ranked(board):
+    """The board with a 'rank' on each entry; tied vote counts share a rank."""
+    ranked, rank, prev = [], 0, None
+    for i, e in enumerate(board):
+        if e['votes'] != prev:
+            rank, prev = i + 1, e['votes']
+        ranked.append({**e, 'rank': rank})
+    return ranked
+
+
+def _costume_results(board):
+    """Final standings for guests and the TV. Only ever sent once voting closes."""
+    return [{k: e[k] for k in ('id', 'nickname', 'costume', 'votes', 'rank')}
+            for e in _ranked(board)]
+
+
+def _costume_state(user_id):
+    """The contest as a guest sees it. Vote counts stay secret until it closes."""
+    phase = _costume_phase()
+    if phase == 'off':
+        return {'phase': 'off'}
+    party_code = db.get_setting('party_code', '')
+    board = db.costume_board(party_code)
+    mine = next((e for e in board if user_id and e['user_id'] == user_id), None)
+    state = {
+        'phase': phase,
+        'my_entry': {'id': mine['id'], 'costume': mine['costume']} if mine else None,
+        'my_vote': db.get_costume_vote(party_code, user_id) if user_id else None,
+    }
+    if phase == 'open':
+        # Alphabetical, so where an entry sits says nothing about its votes.
+        state['entries'] = sorted(
+            ({'id': e['id'], 'nickname': e['nickname'], 'costume': e['costume'],
+              'is_mine': e is mine} for e in board),
+            key=lambda e: (e['costume'].lower(), e['id']))
+    else:
+        state['results'] = _costume_results(board)
+    return state
+
+
+def _costume_tv():
+    """What the TV shows: entry and vote counts while open, the podium once closed."""
+    phase = _costume_phase()
+    if phase == 'off':
+        return {'phase': 'off'}
+    board = db.costume_board(db.get_setting('party_code', ''))
+    tv = {'phase': phase, 'entries': len(board), 'votes': sum(e['votes'] for e in board)}
+    if phase == 'closed':
+        tv['results'] = _costume_results(board)[:5]
+        # Seconds since voting closed, measured here so the TV's clock doesn't matter.
+        closed_at = float(db.get_setting('costume_closed_at', '0') or 0)
+        tv['closed_secs_ago'] = max(0, int(time.time() - closed_at)) if closed_at else None
+    return tv
+
+
 def _guest_issue():
     issue = qm.get_playback_issue()
     return {'code': issue['code'], 'message': issue['guest_message']} if issue else None
@@ -475,6 +539,7 @@ def api_status():
         'playback_issue': _guest_issue(),
         'ui_theme': _ui_theme(),
         'camera': _camera_state(user_id),
+        'costume': _costume_state(user_id),
     })
 
 
@@ -775,6 +840,75 @@ def api_upload_photo():
     return jsonify({'success': True, 'duplicate': result == 'duplicate', 'shots_left': left})
 
 
+# ---------------------------------------------------------------------------
+# Costume contest (guests)
+# ---------------------------------------------------------------------------
+def _costume_guest():
+    """The calling guest, or an error response if they can't take part right now."""
+    user = get_or_create_user(get_user_id_from_request())
+    if not user:
+        return None, (jsonify({'error': 'Invalid user ID'}), 400)
+    if user['is_banned']:
+        return None, (jsonify({'error': "Silenced guests can't join the costume contest.",
+                               'code': 'banned'}), 403)
+    if _costume_phase() != 'open':
+        return None, (jsonify({'error': 'Costume voting is closed.',
+                               'code': 'contest_closed'}), 409)
+    return user, None
+
+
+@app.route('/api/costume/entry', methods=['POST'])
+@limiter.limit('10 per minute')
+@require_party
+def api_costume_enter():
+    """Enter the contest as {"costume": "Morticia Addams"}, or rename your entry."""
+    user, err = _costume_guest()
+    if err:
+        return err
+    costume = ' '.join(((request.get_json() or {}).get('costume') or '').split())
+    if not costume:
+        return jsonify({'error': 'Tell us what you came as!'}), 400
+    if len(costume) > COSTUME_MAX_LEN:
+        return jsonify({'error': f'Keep it under {COSTUME_MAX_LEN} characters.'}), 400
+    entry_id = db.save_costume_entry(db.get_setting('party_code', ''), user['user_id'], costume)
+    return jsonify({'success': True, 'entry': {'id': entry_id, 'costume': costume}})
+
+
+@app.route('/api/costume/entry', methods=['DELETE'])
+@limiter.limit('10 per minute')
+@require_party
+def api_costume_withdraw():
+    user, err = _costume_guest()
+    if err:
+        return err
+    mine = next((e for e in db.costume_board(db.get_setting('party_code', ''))
+                 if e['user_id'] == user['user_id']), None)
+    if not mine:
+        return jsonify({'error': "You haven't entered."}), 404
+    db.delete_costume_entry(mine['id'])
+    return jsonify({'success': True})
+
+
+@app.route('/api/costume/vote', methods=['POST'])
+@limiter.limit('20 per minute')
+@require_party
+def api_costume_vote():
+    """Vote for {"entry_id": 3}. Voting again moves your vote."""
+    user, err = _costume_guest()
+    if err:
+        return err
+    try:
+        entry_id = int((request.get_json() or {}).get('entry_id'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Pick a costume to vote for.'}), 400
+    result = db.cast_costume_vote(db.get_setting('party_code', ''), user['user_id'], entry_id)
+    if result == 'own_entry':
+        return jsonify({'error': "Nice try! You can't vote for yourself.", 'code': 'own_entry'}), 403
+    if result == 'no_entry':
+        return jsonify({'error': 'That costume is no longer in the running.'}), 404
+    return jsonify({'success': True, 'my_vote': entry_id})
+
+
 @app.route('/api/tv')
 @require_party
 def api_tv():
@@ -805,6 +939,7 @@ def api_tv():
         'leaderboards': db.get_leaderboards(),
         'recent_reactions': db.get_recent_reactions(20),
         'ui_theme': _ui_theme(),
+        'costume': _costume_tv(),
     })
 
 
@@ -999,6 +1134,7 @@ def api_host_new_party():
     data = request.get_json() or {}
     stats = db.start_new_party(clear_users=bool(data.get('clear_users')))
     db.rotate_party_code()
+    db.set_setting('costume_phase', 'off')
     session['party_code'] = db.get_setting('party_code')
     qm.resume_party()
     return jsonify({'success': True, **stats, **party_links()})
@@ -1132,6 +1268,47 @@ def api_host_photo_review():
     except (TypeError, ValueError):
         return jsonify({'error': 'Photo IDs must be numbers.'}), 400
     return jsonify({'success': True, 'changed': changed})
+
+
+# ---------------------------------------------------------------------------
+# Costume contest (host)
+# ---------------------------------------------------------------------------
+@app.route('/api/host/costume')
+@require_host
+def api_host_costume():
+    """The live tally, which only the host sees while voting is open."""
+    party_code = db.get_setting('party_code', '')
+    board = _ranked(db.costume_board(party_code))
+    return jsonify({
+        'phase': _costume_phase(),
+        'entries': [{k: e[k] for k in ('id', 'nickname', 'costume', 'votes', 'rank')}
+                    for e in board],
+        'votes': sum(e['votes'] for e in board),
+    })
+
+
+@app.route('/api/host/costume/phase', methods=['POST'])
+@require_host
+def api_host_costume_phase():
+    """{"phase": "open"} starts voting, "closed" ends it and reveals the
+    winner on the TV, "off" hides the contest again."""
+    phase = (request.get_json() or {}).get('phase')
+    if phase not in db.COSTUME_PHASES:
+        return jsonify({'error': 'Phase must be off, open or closed.'}), 400
+    if phase == 'closed' and _costume_phase() != 'closed':
+        db.set_setting('costume_closed_at', time.time())
+    db.set_setting('costume_phase', phase)
+    return jsonify({'success': True, 'phase': phase})
+
+
+@app.route('/api/host/costume/entry/<int:entry_id>', methods=['DELETE'])
+@require_host
+def api_host_costume_remove(entry_id):
+    entry = db.get_costume_entry(entry_id)
+    if not entry or entry['party_code'] != db.get_setting('party_code', ''):
+        return jsonify({'error': 'Entry not found'}), 404
+    db.delete_costume_entry(entry_id)
+    return jsonify({'success': True})
 
 
 @app.route('/api/host/demo', methods=['POST'])

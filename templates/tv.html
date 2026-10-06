@@ -6,6 +6,7 @@
   <title>Party Jukebox — TV Display</title>
   <link rel="stylesheet" href="/static/css/jukebox.css">
   <link id="classic-css" rel="stylesheet" href="/static/css/classic.css"{% if ui_theme != 'classic' %} disabled{% endif %}>
+  <link rel="stylesheet" href="/static/css/costume.css">
   <style>
     body {
       overflow: hidden;
@@ -55,6 +56,13 @@
 
     <!-- Corner decoration -->
     <div class="tv-wordmark">Party Jukebox</div>
+
+    <!-- Costume contest call to vote (while voting is open) -->
+    <div id="tv-costume-banner" class="tv-costume-banner hidden">
+      <span class="tv-costume-banner-title">🎃 Costume Contest</span>
+      <span>Vote on your phone</span>
+      <span id="tv-costume-counts" class="tv-costume-counts"></span>
+    </div>
 
     <!-- Live reaction feed overlay -->
     <div id="tv-reaction-feed" class="tv-reaction-feed"></div>
@@ -147,6 +155,17 @@
   </div>
 
 </div><!-- end tv-dash -->
+
+<!-- Costume contest winner reveal (full screen, right after voting closes) -->
+<div id="tv-costume-reveal" class="tv-costume-reveal hidden" aria-live="polite">
+  <div id="tv-costume-drumroll" class="tv-costume-drumroll">And the best costume goes to…</div>
+  <div id="tv-costume-winner" class="tv-costume-winner hidden">
+    <div class="tv-costume-crown">👑</div>
+    <div id="tv-costume-winner-name" class="tv-costume-winner-name"></div>
+    <div id="tv-costume-winner-who" class="tv-costume-winner-who"></div>
+    <div id="tv-costume-podium" class="tv-costume-podium"></div>
+  </div>
+</div>
 
 <script src="/static/js/tv.js"></script>
 </body>
