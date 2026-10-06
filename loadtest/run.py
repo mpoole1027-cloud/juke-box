@@ -34,6 +34,11 @@ from server import PARTY_CODE  # noqa: E402
 
 WORDS = ['love', 'night', 'dance', 'fire', 'gold', 'summer', 'baby', 'heart',
          'party', 'dream', 'rain', 'city', 'wild', 'star', 'run', 'blue']
+# 256 two-word "artists" with a long tail: a few get searched a lot, most once
+# or twice, roughly like a real party. Too few distinct searches would flatter
+# the search cache.
+ARTISTS = [f'{a} {b}' for a in WORDS for b in WORDS]
+ARTIST_WEIGHTS = [1 / (i + 1) for i in range(len(ARTISTS))]
 
 
 class Recorder:
@@ -87,10 +92,10 @@ def guest(rec, base, stop, start_delay, rng):
             next_action = time.monotonic() + rng.uniform(30, 90)
             # Typing a search: the page debounces at 500 ms, so a word comes
             # through as two or three requests.
-            word = rng.choice(WORDS)
+            artist = rng.choices(ARTISTS, ARTIST_WEIGHTS)[0]
             tracks = []
-            for n in sorted(rng.sample(range(3, len(word) + 3), 2)):
-                r = rec.call(s, 'GET', base, f'/api/search?q={word[:n]}')
+            for n in sorted(rng.sample(range(3, len(artist) + 1), 2)) + [len(artist)]:
+                r = rec.call(s, 'GET', base, f'/api/search?q={artist[:n]}')
                 if r is not None and r.ok:
                     tracks = r.json().get('tracks', [])
                 time.sleep(0.6)
@@ -125,7 +130,7 @@ def pct(xs, p):
     return xs[min(len(xs) - 1, int(len(xs) * p))]
 
 
-def run_once(port, guests, seconds, threads):
+def run_once(port, guests, seconds, threads, no_search_cache=False):
     base = f'http://127.0.0.1:{port}'
     # A file, not a pipe: nothing reads a pipe during the run, and once it
     # fills, every server thread that logs blocks and the server freezes.
@@ -133,7 +138,7 @@ def run_once(port, guests, seconds, threads):
     log = open(log_path, 'w')
     server = subprocess.Popen(
         [sys.executable, os.path.join(HERE, 'server.py'), '--port', str(port),
-         '--threads', str(threads)],
+         '--threads', str(threads)] + (['--no-search-cache'] if no_search_cache else []),
         cwd=ROOT, stdout=log, stderr=subprocess.STDOUT)
     try:
         for _ in range(100):
@@ -173,7 +178,8 @@ def run_once(port, guests, seconds, threads):
         log.close()
 
     total = sum(len(v) for v in rec.lat.values())
-    print(f'\n=== {guests} guests, {seconds}s, {threads} server threads '
+    print(f'\n=== {guests} guests, {seconds}s, {threads} server threads'
+          f'{", search cache OFF" if no_search_cache else ""} '
           f'— {total} requests ({total / elapsed:.1f}/s)')
     print(f'{"endpoint":22} {"n":>6} {"p50 ms":>8} {"p95 ms":>8} {"max ms":>8}  status codes')
     for name in sorted(rec.lat, key=lambda n: -len(rec.lat[n])):
@@ -196,9 +202,11 @@ def main():
     ap.add_argument('--seconds', type=int, default=90)
     ap.add_argument('--threads', type=int, default=16, help='waitress threads (app.py uses 16)')
     ap.add_argument('--port', type=int, default=5098)
+    ap.add_argument('--no-search-cache', action='store_true',
+                    help='turn the search cache off, to compare Spotify call counts')
     args = ap.parse_args()
     for n in args.guests:
-        run_once(args.port, n, args.seconds, args.threads)
+        run_once(args.port, n, args.seconds, args.threads, args.no_search_cache)
 
 
 if __name__ == '__main__':

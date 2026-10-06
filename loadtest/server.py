@@ -66,6 +66,14 @@ class FakeSpotify:
 
     # --- search ---
     def search_tracks(self, query, limit=10):
+        # The real function, so its cache sits in front of the fake API call.
+        import spotify_client
+        return spotify_client.search_tracks(query, limit)
+
+    def rate_limited_for(self):
+        return 0
+
+    def _search_spotify(self, query, limit=10):
         self._api('search', 'search')
         base = abs(hash(query.lower())) % 10**12
         return [{
@@ -155,6 +163,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--port', type=int, default=5098)
     ap.add_argument('--threads', type=int, default=16)
+    ap.add_argument('--no-search-cache', action='store_true')
     args = ap.parse_args()
 
     import logging
@@ -163,7 +172,11 @@ def main():
     import queue_manager as qm
     from flask import jsonify
 
+    import spotify_client
     fake = FakeSpotify()
+    spotify_client._search_spotify = fake._search_spotify
+    if args.no_search_cache:
+        spotify_client.SEARCH_CACHE_SECONDS = 0
     jukebox.sc = fake
     qm.sc = fake
     logging.getLogger().setLevel(logging.WARNING)
