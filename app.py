@@ -85,22 +85,89 @@ def get_or_init_playlist():
     return playlist_id
 
 
+def _resolve_current_track():
+    """Resolve the now-playing track from demo mode or Spotify.
+
+    Returns (current_track, playing_queue_item, current_queue_id).
+    current_track is the base track dict (or None). When a matching 'playing'
+    queue row is found, current_track is enriched with 'requested_by_nickname'
+    and 'dedication', and playing_queue_item / current_queue_id are populated.
+    """
+    demo_mode = db.get_setting('demo_mode', '0') == '1'
+    demo_track_raw = db.get_setting('demo_current_track', '')
+    current_track = None
+
+    if demo_mode and demo_track_raw:
+        try:
+            current_track = json.loads(demo_track_raw)
+        except Exception:
+            current_track = None
+    else:
+        playback = sc.get_current_playback()
+        if playback and playback.get('item'):
+            item = playback['item']
+            current_track = {
+                'track_id': item['id'],
+                'track_name': item['name'],
+                'artist': ', '.join(a['name'] for a in item['artists']),
+                'album_art': item['album']['images'][0]['url'] if item['album']['images'] else '',
+                'duration_ms': item['duration_ms'],
+                'progress_ms': playback.get('progress_ms', 0),
+                'is_playing': playback.get('is_playing', False),
+            }
+
+    playing_queue_item = None
+    current_queue_id = None
+    if current_track:
+        conn = db.get_connection()
+        try:
+            row = conn.execute(
+                "SELECT q.*, u.nickname FROM queue q JOIN users u ON q.requested_by = u.user_id "
+                "WHERE q.spotify_track_id = ? AND q.status = 'playing' LIMIT 1",
+                (current_track['track_id'],)
+            ).fetchone()
+            if row:
+                playing_queue_item = dict(row)
+                current_queue_id = playing_queue_item['id']
+        finally:
+            conn.close()
+        if playing_queue_item:
+            current_track['requested_by_nickname'] = playing_queue_item.get('nickname')
+            current_track['dedication'] = playing_queue_item.get('dedication')
+
+    return current_track, playing_queue_item, current_queue_id
+
+
+UI_THEMES = ('modern', 'classic')
+
+
+def _ui_theme():
+    theme = db.get_setting('ui_theme', 'modern')
+    return theme if theme in UI_THEMES else 'modern'
+
+
+@app.before_request
+def _note_party_activity():
+    if request.method == 'POST' and request.path.startswith('/api/'):
+        qm.note_activity()
+
+
 # ---------------------------------------------------------------------------
 # Page routes
 # ---------------------------------------------------------------------------
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html', ui_theme=_ui_theme())
 
 
 @app.route('/host')
 def host():
-    return render_template('host.html')
+    return render_template('host.html', ui_theme=_ui_theme())
 
 
 @app.route('/tv')
 def tv():
-    return render_template('tv.html')
+    return render_template('tv.html', ui_theme=_ui_theme())
 
 
 @app.route('/qr')
@@ -109,7 +176,7 @@ def qr_code():
     party_url = db.get_setting('party_url', os.environ.get('PARTY_URL', 'http://localhost:5000'))
     img = qrcode.make(party_url)
     buf = io.BytesIO()
-    img.save(buf, format='PNG')
+    img.save(buf, 'PNG')
     buf.seek(0)
     return send_file(buf, mimetype='image/png')
 
@@ -170,56 +237,22 @@ def api_status():
     user_id = get_user_id_from_request()
     user = get_or_create_user(user_id) if user_id else None
 
-    # Demo mode overrides Spotify playback
     demo_mode = db.get_setting('demo_mode', '0') == '1'
-    demo_track_raw = db.get_setting('demo_current_track', '')
-    current_track = None
 
-    if demo_mode and demo_track_raw:
-        try:
-            current_track = json.loads(demo_track_raw)
-        except Exception:
-            current_track = None
-    else:
-        playback = sc.get_current_playback()
-        if playback and playback.get('item'):
-            item = playback['item']
-            current_track = {
-                'track_id': item['id'],
-                'track_name': item['name'],
-                'artist': ', '.join(a['name'] for a in item['artists']),
-                'album_art': item['album']['images'][0]['url'] if item['album']['images'] else '',
-                'duration_ms': item['duration_ms'],
-                'progress_ms': playback.get('progress_ms', 0),
-                'is_playing': playback.get('is_playing', False),
-            }
+    # Resolve the current now-playing track (demo mode or Spotify) plus the
+    # matching 'playing' queue row, if any.
+    current_track, playing_queue_item, current_queue_id = _resolve_current_track()
 
-    # Find the queue item that matches the current Spotify track
-    playing_queue_item = None
     downvote_count = 0
     user_has_downvoted = False
-    current_queue_id = None
-
-    if current_track:
-        # Look for matching item in queue with status 'playing'
-        import sqlite3 as _sqlite3
-        conn = db.get_connection()
-        try:
-            row = conn.execute(
-                "SELECT * FROM queue WHERE spotify_track_id = ? AND status = 'playing' LIMIT 1",
-                (current_track['track_id'],)
-            ).fetchone()
-            if row:
-                playing_queue_item = dict(row)
-                current_queue_id = playing_queue_item['id']
-                downvote_count = db.get_downvote_count(current_queue_id)
-                if user_id:
-                    user_has_downvoted = db.user_has_downvoted(current_queue_id, user_id)
-        finally:
-            conn.close()
+    if current_queue_id:
+        downvote_count = db.get_downvote_count(current_queue_id)
+        if user_id:
+            user_has_downvoted = db.user_has_downvoted(current_queue_id, user_id)
 
     pending_queue = db.get_pending_queue()
-    reactions = db.get_reaction_counts()
+    # Reaction counts for the CURRENT song only (fall back to global if none).
+    reactions = db.get_reaction_counts(current_queue_id) if current_queue_id else db.get_reaction_counts()
     banned_users = db.get_banned_users()
 
     settings = {
@@ -242,6 +275,11 @@ def api_status():
                 'album_art': q['album_art'],
                 'duration_ms': q['duration_ms'],
                 'status': q['status'],
+                'requested_by': q['requested_by'],
+                'nickname': q['nickname'],
+                'dedication': q.get('dedication'),
+                'upvote_count': q['upvote_count'],
+                'user_has_upvoted': db.user_has_upvoted(q['id'], user_id) if user_id else False,
             }
             for q in pending_queue
         ],
@@ -254,6 +292,7 @@ def api_status():
         } if user else None,
         'settings': settings,
         'spotify_connected': sc.is_authenticated(),
+        'ui_theme': _ui_theme(),
     })
 
 
@@ -296,6 +335,7 @@ def api_queue():
     artist = data.get('artist', '').strip()
     album_art = data.get('album_art', '')
     duration_ms = data.get('duration_ms', 0)
+    ded = (data.get('dedication') or '').strip()[:80] or None
 
     if not track_id or not track_name or not artist:
         return jsonify({'error': 'Missing track info'}), 400
@@ -310,12 +350,12 @@ def api_queue():
     if user_count >= max_per_user:
         return jsonify({'error': f'You already have {max_per_user} songs in the queue!'}), 429
 
-    queue_id = db.add_to_queue(track_id, track_name, artist, album_art, duration_ms, user_id)
+    queue_id = db.add_to_queue(track_id, track_name, artist, album_art, duration_ms, user_id, dedication=ded)
 
     if sc.is_authenticated():
         playback = sc.get_current_playback()
         if not playback or not playback.get('is_playing'):
-            device_id = sc.get_active_device_id()
+            device_id = qm.get_party_device_id()
             ok, _ = sc.play_track(f'spotify:track:{track_id}', device_id=device_id)
             if ok:
                 db.update_queue_status(queue_id, 'playing')
@@ -359,15 +399,9 @@ def api_downvote():
         if skip_count >= skip_ban_threshold:
             db.ban_user(requester)
 
-        device_id = sc.get_active_device_id()
-        pending = db.get_pending_queue()
-        if pending:
-            next_item = pending[0]
-            ok, _ = sc.play_track(f"spotify:track:{next_item['spotify_track_id']}", device_id=device_id)
-            if ok:
-                db.update_queue_status(next_item['id'], 'playing')
-        else:
-            sc.pause_playback(device_id=device_id)
+        # Single source of truth: advances to the next song, or falls back to
+        # the host's playlist when the queue is empty.
+        qm.advance_to_next_pending()
 
     return jsonify({'success': True, 'downvote_count': count, 'threshold': threshold})
 
@@ -385,9 +419,108 @@ def api_react():
     if reaction not in ('fire', 'heart'):
         return jsonify({'error': 'Invalid reaction. Use fire or heart.'}), 400
 
-    db.add_reaction(user_id, reaction)
-    counts = db.get_reaction_counts()
+    playing_item = db.get_playing_item()
+    current_queue_id = playing_item['id'] if playing_item else None
+    db.add_reaction(user_id, reaction, current_queue_id)
+    counts = db.get_reaction_counts(current_queue_id) if current_queue_id else db.get_reaction_counts()
     return jsonify({'success': True, 'reactions': counts})
+
+
+@app.route('/api/user/nickname', methods=['POST'])
+def api_set_nickname():
+    user_id = get_user_id_from_request()
+    if not user_id:
+        return jsonify({'error': 'Missing user ID'}), 400
+
+    user = get_or_create_user(user_id)
+    if not user:
+        return jsonify({'error': 'Invalid user ID'}), 400
+
+    data = request.get_json() or {}
+    nickname = (data.get('nickname') or '').strip()
+    if not nickname:
+        return jsonify({'error': 'Nickname cannot be empty'}), 400
+    nickname = nickname[:24]
+
+    db.set_user_nickname(user_id, nickname)
+    return jsonify({'success': True, 'nickname': nickname})
+
+
+@app.route('/api/upvote', methods=['POST'])
+def api_upvote():
+    user_id = get_user_id_from_request()
+    if not user_id:
+        return jsonify({'error': 'Missing user ID'}), 400
+
+    user = get_or_create_user(user_id)
+    if not user:
+        return jsonify({'error': 'Invalid user ID'}), 400
+
+    data = request.get_json() or {}
+    queue_item_id = data.get('queue_item_id')
+    if not queue_item_id:
+        return jsonify({'error': 'Missing queue_item_id'}), 400
+
+    item = db.get_queue_item(queue_item_id)
+    if not item:
+        return jsonify({'error': 'Queue item not found'}), 404
+
+    added = db.add_upvote(queue_item_id, user_id)
+    if not added:
+        return jsonify({'error': 'You already upvoted this song'}), 409
+
+    count = db.get_upvote_count(queue_item_id)
+    return jsonify({'success': True, 'upvote_count': count})
+
+
+@app.route('/api/queue/<int:queue_id>', methods=['DELETE'])
+def api_remove_queue_item(queue_id):
+    user_id = get_user_id_from_request()
+    if not user_id:
+        return jsonify({'error': 'Missing user ID'}), 400
+
+    item = db.get_queue_item(queue_id)
+    if not item:
+        return jsonify({'error': 'Queue item not found'}), 404
+    if item['requested_by'] != user_id:
+        return jsonify({'error': 'You can only remove your own songs'}), 403
+
+    removed = db.remove_pending_by_user(queue_id, user_id)
+    if not removed:
+        return jsonify({'error': 'Song is no longer pending'}), 404
+    return jsonify({'success': True})
+
+
+@app.route('/api/tv')
+def api_tv():
+    """Public TV dashboard payload (no auth)."""
+    current_track, playing_queue_item, current_queue_id = _resolve_current_track()
+
+    reactions = db.get_reaction_counts(current_queue_id) if current_queue_id else db.get_reaction_counts()
+
+    pending_queue = db.get_pending_queue()
+    queue = [
+        {
+            'id': q['id'],
+            'track_name': q['track_name'],
+            'artist': q['artist'],
+            'album_art': q['album_art'],
+            'nickname': q['nickname'],
+            'dedication': q.get('dedication'),
+            'upvote_count': q['upvote_count'],
+        }
+        for q in pending_queue
+    ]
+
+    return jsonify({
+        'current_track': current_track,
+        'reactions': reactions,
+        'queue': queue,
+        'stats': db.get_party_stats(),
+        'leaderboards': db.get_leaderboards(),
+        'recent_reactions': db.get_recent_reactions(20),
+        'ui_theme': _ui_theme(),
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -401,18 +534,8 @@ def api_host_skip():
         db.update_queue_status(playing_item['id'], 'skipped')
         db.mark_track_played(playing_item['spotify_track_id'])
 
-    device_id = sc.get_active_device_id()
-    pending = db.get_pending_queue()
-    if pending:
-        next_item = pending[0]
-        ok, err = sc.play_track(f"spotify:track:{next_item['spotify_track_id']}", device_id=device_id)
-        if ok:
-            db.update_queue_status(next_item['id'], 'playing')
-            return jsonify({'success': True})
-        return jsonify({'error': err or 'Failed to play next song'}), 500
-    else:
-        sc.pause_playback(device_id=device_id)
-        return jsonify({'success': True})
+    qm.advance_to_next_pending()
+    return jsonify({'success': True})
 
 
 @app.route('/api/host/ban', methods=['POST'])
@@ -442,6 +565,11 @@ def api_host_unban():
 def api_host_settings():
     data = request.get_json() or {}
 
+    if 'ui_theme' in data:
+        if data['ui_theme'] not in UI_THEMES:
+            return jsonify({'error': 'Theme must be "modern" or "classic".'}), 400
+        db.set_setting('ui_theme', data['ui_theme'])
+
     if 'downvote_threshold' in data:
         val = int(data['downvote_threshold'])
         if 1 <= val <= 20:
@@ -467,6 +595,39 @@ def api_host_settings():
         url = data['party_url'].strip()
         if url:
             db.set_setting('party_url', url)
+
+    if 'preferred_device_id' in data:
+        db.set_setting('preferred_device_id', (data['preferred_device_id'] or '').strip())
+
+    if 'idle_shutdown_hours' in data:
+        try:
+            val = int(data['idle_shutdown_hours'])
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Idle shutdown must be a whole number of hours.'}), 400
+        if not 0 <= val <= 72:
+            return jsonify({'error': 'Idle shutdown must be between 0 and 72 hours (0 disables).'}), 400
+        db.set_setting('idle_shutdown_hours', val)
+
+    if 'fallback_playlist_url' in data:
+        raw = (data['fallback_playlist_url'] or '').strip()
+        if not raw:
+            # Empty clears the fallback — the queue simply runs dry in silence.
+            db.set_setting('fallback_playlist_id', '')
+            db.set_setting('fallback_playlist_name', '')
+        else:
+            playlist_id = sc.parse_playlist_id(raw)
+            if not playlist_id:
+                return jsonify({'error': "That doesn't look like a Spotify playlist link."}), 400
+            if not sc.is_authenticated():
+                return jsonify({'error': 'Connect Spotify before setting a fallback playlist.'}), 400
+            meta = sc.get_playlist_meta(playlist_id)
+            if not meta:
+                return jsonify({'error': "Couldn't read that playlist. Make sure it's yours "
+                                         "or public (collaborative playlists aren't supported)."}), 400
+            if not meta['track_count']:
+                return jsonify({'error': f"'{meta['name']}' has no tracks in it."}), 400
+            db.set_setting('fallback_playlist_id', meta['id'])
+            db.set_setting('fallback_playlist_name', meta['name'])
 
     return jsonify({'success': True})
 
@@ -514,11 +675,45 @@ def api_host_spotify_status():
     connected = sc.is_authenticated()
     auth_url = sc.get_auth_url() if not connected else None
     party_url = db.get_setting('party_url', os.environ.get('PARTY_URL', 'http://localhost:5000'))
+    fallback_id = db.get_setting('fallback_playlist_id', '')
     return jsonify({
         'connected': connected,
         'auth_url': auth_url,
         'party_url': party_url,
+        'fallback_playlist_id': fallback_id,
+        'fallback_playlist_name': db.get_setting('fallback_playlist_name', ''),
+        'fallback_playlist_url': (f'https://open.spotify.com/playlist/{fallback_id}'
+                                  if fallback_id else ''),
+        'standing_down': qm.is_standing_down(),
+        'idle_shutdown_hours': int(db.get_setting('idle_shutdown_hours', '6')),
+        'preferred_device_id': db.get_setting('preferred_device_id', ''),
     })
+
+
+@app.route('/api/host/new_party', methods=['POST'])
+@require_host
+def api_host_new_party():
+    """Reset per-party state. Without this, played_tracks accumulates forever
+    and previously-played songs stay permanently un-requestable."""
+    data = request.get_json() or {}
+    stats = db.start_new_party(clear_users=bool(data.get('clear_users')))
+    qm.resume_party()
+    return jsonify({'success': True, **stats})
+
+
+@app.route('/api/host/devices')
+@require_host
+def api_host_devices():
+    return jsonify({
+        'devices': sc.list_devices(),
+        'preferred_device_id': db.get_setting('preferred_device_id', ''),
+    })
+
+
+@app.route('/api/host/resume_party', methods=['POST'])
+@require_host
+def api_host_resume_party():
+    return jsonify({'success': True, 'was_standing_down': qm.resume_party()})
 
 
 @app.route('/api/host/reorder', methods=['POST'])
@@ -555,7 +750,7 @@ def api_host_queue():
     if sc.is_authenticated():
         playback = sc.get_current_playback()
         if not playback or not playback.get('is_playing'):
-            device_id = sc.get_active_device_id()
+            device_id = qm.get_party_device_id()
             ok, _ = sc.play_track(f'spotify:track:{track_id}', device_id=device_id)
             if ok:
                 db.update_queue_status(queue_id, 'playing')

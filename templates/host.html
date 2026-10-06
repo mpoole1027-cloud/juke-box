@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="{{ ui_theme }}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Jukebox Host Panel</title>
   <link rel="stylesheet" href="/static/css/jukebox.css">
+  <link id="classic-css" rel="stylesheet" href="/static/css/classic.css"{% if ui_theme != 'classic' %} disabled{% endif %}>
 </head>
 <body>
 
@@ -39,7 +40,7 @@
 
   <!-- Header -->
   <div style="background:var(--bg-card);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;justify-content:space-between">
-    <h1 style="font-family:'Playfair Display SC',serif;font-size:1.6rem;color:var(--primary);letter-spacing:3px">🎛 HOST PANEL</h1>
+    <h1 style="font-family:var(--font-display);font-weight:600;font-size:1.3rem;color:var(--text)">🎛 Host Panel</h1>
     <div style="display:flex;gap:10px;align-items:center">
       <span style="color:var(--text-dim);font-size:0.78rem">Spotify: <span id="spotify-status">checking...</span></span>
       <a id="spotify-connect-btn" href="/auth/spotify" class="btn btn-primary btn-sm hidden">CONNECT SPOTIFY</a>
@@ -62,6 +63,11 @@
         <div class="mt-12" style="display:flex;gap:8px;flex-wrap:wrap">
           <button id="skip-btn" class="btn btn-danger btn-sm">⏭ FORCE SKIP</button>
           <button id="clear-queue-btn" class="btn btn-ghost btn-sm">🗑 CLEAR QUEUE</button>
+          <button id="new-party-btn" class="btn btn-primary btn-sm">🎉 NEW PARTY</button>
+        </div>
+        <div id="standby-banner" class="hidden" style="margin-top:10px;padding:8px 10px;border:1px solid var(--warning);border-radius:6px;font-size:0.76rem;color:var(--warning)">
+          Standing down — idle too long, not controlling Spotify.
+          <button id="resume-party-btn" class="btn btn-ghost btn-sm" style="margin-left:8px">RESUME</button>
         </div>
       </div>
 
@@ -84,7 +90,7 @@
         </div>
         <p style="color:var(--text-dim);font-size:0.75rem;margin-bottom:10px">Guests scan this to join the party</p>
         <img id="qr-img" src="/qr" alt="QR Code"
-          style="width:160px;height:160px;border:3px solid var(--primary);border-radius:8px;box-shadow:var(--glow-pink)">
+          style="width:160px;height:160px;border:3px solid var(--primary);border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,0.3)">
         <div id="party-url-display" style="margin-top:8px;font-size:0.72rem;color:var(--accent)"></div>
       </div>
 
@@ -92,6 +98,24 @@
 
     <!-- ── Main content ── -->
     <div class="host-main">
+
+      <!-- Appearance -->
+      <div class="card">
+        <div class="section-header">
+          <h2>APPEARANCE</h2>
+          <div class="line"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+          <label class="toggle-label">
+            <input type="checkbox" id="classic-toggle">
+            <span class="toggle-switch"></span>
+            Classic look
+          </label>
+          <span style="color:var(--text-dim);font-size:0.78rem">
+            The original diner-jukebox style. Switches every guest phone and the TV.
+          </span>
+        </div>
+      </div>
 
       <!-- Demo Mode -->
       <div class="card" style="border-color:rgba(212,175,55,0.6)">
@@ -108,7 +132,7 @@
             <span class="toggle-switch"></span>
             Demo Mode
           </label>
-          <span id="demo-status" style="font-family:'Playfair Display SC',serif;font-size:0.75rem;letter-spacing:1px;color:var(--text-muted)">OFF</span>
+          <span id="demo-status" style="font-family:var(--font-ui);font-size:0.75rem;letter-spacing:1px;color:var(--text-muted)">OFF</span>
         </div>
         <div id="demo-track-form">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
@@ -142,7 +166,7 @@
 
         <!-- Manual entry (always available) -->
         <details id="host-manual-section" style="margin-top:8px">
-          <summary style="cursor:pointer;color:var(--text-dim);font-size:0.8rem;font-family:'Playfair Display SC',serif;letter-spacing:1px;margin-bottom:10px">
+          <summary style="cursor:pointer;color:var(--text-dim);font-size:0.8rem;font-family:var(--font-ui);letter-spacing:1px;margin-bottom:10px">
             ▸ ADD MANUALLY (demo / no Spotify)
           </summary>
           <div style="margin-top:10px">
@@ -202,6 +226,39 @@
               PARTY URL (for QR code)
             </label>
             <input id="party-url-input" type="text" class="input-field" placeholder="http://192.168.1.X:5000" style="margin-bottom:0">
+          </div>
+
+          <!-- Playback device -->
+          <div>
+            <label style="font-size:0.78rem;color:var(--text-dim);display:block;margin-bottom:6px">
+              PLAYBACK DEVICE
+            </label>
+            <select id="device-select" class="input-field" style="margin-bottom:0">
+              <option value="">Auto (whatever's active)</option>
+            </select>
+          </div>
+
+          <!-- Idle standby -->
+          <div>
+            <label style="font-size:0.78rem;color:var(--text-dim);display:block;margin-bottom:6px">
+              IDLE STANDBY (HOURS): <span id="idle-val" style="color:var(--primary)">6</span>
+            </label>
+            <input type="range" id="idle-slider" min="0" max="24" value="6">
+            <div style="font-size:0.68rem;color:var(--text-muted);margin-top:4px">
+              0 disables. Stops controlling Spotify after this long with no activity.
+            </div>
+          </div>
+
+          <!-- Fallback playlist -->
+          <div style="grid-column:1/-1">
+            <label style="font-size:0.78rem;color:var(--text-dim);display:block;margin-bottom:6px">
+              FALLBACK PLAYLIST
+            </label>
+            <input id="fallback-playlist-input" type="text" class="input-field"
+                   placeholder="Paste a Spotify playlist link — leave blank for none" style="margin-bottom:0">
+            <div id="fallback-playlist-status" style="margin-top:6px;font-size:0.72rem;color:var(--text-muted)">
+              Plays when the guest queue is empty, so there's never silence. Never modified.
+            </div>
           </div>
 
         </div>

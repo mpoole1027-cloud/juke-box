@@ -12,6 +12,19 @@ function escHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+// ----------------------------------------------------------------
+// Theme (host-controlled; mirrored from every poll)
+// ----------------------------------------------------------------
+function applyTheme(theme) {
+  if (!theme || document.documentElement.dataset.theme === theme) return;
+  const classic = theme === 'classic';
+  document.documentElement.dataset.theme = theme;
+  const link = document.getElementById('classic-css');
+  if (link) link.disabled = !classic;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = classic ? '#1a0c08' : '#f5efe1';
+}
+
 function showToast(msg, type = '') {
   const container = $('toast-container');
   const toast = document.createElement('div');
@@ -81,6 +94,8 @@ async function loadStatus() {
     renderNowPlaying(data.current_track);
     renderManageQueue(data.queue);
     renderSettings(data.settings);
+    applyTheme(data.ui_theme);
+    $('classic-toggle').checked = data.ui_theme === 'classic';
   } catch (e) {}
 }
 
@@ -122,6 +137,52 @@ async function loadSpotifyStatus() {
     if (data.party_url) {
       qrImg.src = '/qr?' + Date.now();
       partyUrlEl.textContent = data.party_url;
+    }
+
+    const idleSlider = $('idle-slider');
+    if (idleSlider && document.activeElement !== idleSlider &&
+        typeof data.idle_shutdown_hours === 'number') {
+      idleSlider.value = data.idle_shutdown_hours;
+      $('idle-val').textContent = data.idle_shutdown_hours;
+    }
+
+    const banner = $('standby-banner');
+    if (banner) banner.classList.toggle('hidden', !data.standing_down);
+
+    const sel = $('device-select');
+    if (sel && document.activeElement !== sel) {
+      try {
+        const dres = await hostFetch('/api/host/devices');
+        const ddata = await dres.json();
+        const want = ddata.preferred_device_id || '';
+        sel.innerHTML = '<option value="">Auto (whatever\u2019s active)</option>' +
+          (ddata.devices || []).map(d =>
+            `<option value="${d.id}">${d.name}${d.is_active ? ' \u2022 active' : ''}</option>`
+          ).join('');
+        sel.value = want;
+        if (want && sel.value !== want) {
+          // Pinned device isn't online right now — keep it selectable.
+          sel.innerHTML += `<option value="${want}">(pinned device, offline)</option>`;
+          sel.value = want;
+        }
+      } catch (e) {}
+    }
+
+    const fbInput = $('fallback-playlist-input');
+    const fbStatus = $('fallback-playlist-status');
+    if (fbInput && document.activeElement !== fbInput) {
+      fbInput.value = data.fallback_playlist_url || '';
+    }
+    if (fbStatus) {
+      if (data.fallback_playlist_name) {
+        fbStatus.textContent = '\u2713 ' + data.fallback_playlist_name +
+          ' \u2014 plays whenever the queue is empty.';
+        fbStatus.style.color = 'var(--accent)';
+      } else {
+        fbStatus.textContent =
+          "No fallback set \u2014 music stops when the queue runs dry.";
+        fbStatus.style.color = 'var(--text-muted)';
+      }
     }
   } catch (e) {}
 }
@@ -175,6 +236,10 @@ function renderManageQueue(queue) {
       <div class="manage-queue-info">
         <div class="manage-queue-title">${escHtml(item.track_name)}</div>
         <div class="manage-queue-artist">${escHtml(item.artist)}</div>
+        <div style="font-size:0.68rem;color:var(--text-muted);margin-top:2px">
+          added by ${escHtml(item.nickname || '—')}${item.upvote_count > 0 ? ` · 👍 ${item.upvote_count}` : ''}
+        </div>
+        ${item.dedication ? `<div style="font-size:0.68rem;color:var(--text-dim);font-style:italic;margin-top:1px">“${escHtml(item.dedication)}”</div>` : ''}
       </div>
     </div>
   `).join('');
@@ -294,6 +359,11 @@ $('save-settings-btn').addEventListener('click', async () => {
   const partyUrl = $('party-url-input').value.trim();
   if (partyUrl) body.party_url = partyUrl;
 
+  // Always sent, so clearing the field clears the fallback.
+  body.fallback_playlist_url = $('fallback-playlist-input').value.trim();
+  body.preferred_device_id = $('device-select').value;
+  body.idle_shutdown_hours = parseInt($('idle-slider').value, 10);
+
   const res = await hostFetch('/api/host/settings', {
     method: 'POST',
     body: JSON.stringify(body),
@@ -303,7 +373,12 @@ $('save-settings-btn').addEventListener('click', async () => {
     $('new-password').value = '';
     loadSpotifyStatus();
   } else {
-    showToast('Failed to save settings', 'error');
+    let msg = 'Failed to save settings';
+    try {
+      const err = await res.json();
+      if (err && err.error) msg = err.error;
+    } catch (e) {}
+    showToast(msg, 'error');
   }
 });
 
@@ -331,6 +406,24 @@ $('demo-toggle').addEventListener('change', async e => {
     body: JSON.stringify({ enabled }),
   });
   showToast(enabled ? 'Demo mode ON' : 'Demo mode OFF', 'success');
+});
+
+// ----------------------------------------------------------------
+// Appearance
+// ----------------------------------------------------------------
+$('classic-toggle').addEventListener('change', async e => {
+  const theme = e.target.checked ? 'classic' : 'modern';
+  const res = await hostFetch('/api/host/settings', {
+    method: 'POST',
+    body: JSON.stringify({ ui_theme: theme }),
+  });
+  if (res.ok) {
+    applyTheme(theme);
+    showToast(theme === 'classic' ? 'Classic look on' : 'Modern look on', 'success');
+  } else {
+    e.target.checked = !e.target.checked;
+    showToast('Failed to change the look', 'error');
+  }
 });
 
 $('set-demo-track-btn').addEventListener('click', async () => {
@@ -463,3 +556,40 @@ function startPolling() {
 // Init
 // ----------------------------------------------------------------
 checkAuth();
+
+
+// ----------------------------------------------------------------
+// Party lifecycle
+// ----------------------------------------------------------------
+$('idle-slider').addEventListener('input', e => {
+  $('idle-val').textContent = e.target.value;
+});
+
+$('new-party-btn').addEventListener('click', async () => {
+  // Confirm: this clears the played-song history, skip counts and bans.
+  if (!window.confirm(
+      'Start a new party?\n\nClears the played-song history (so previously ' +
+      'played songs can be requested again), resets skip counts and unbans ' +
+      'everyone. Guest nicknames are kept.')) return;
+  const res = await hostFetch('/api/host/new_party', {
+    method: 'POST', body: JSON.stringify({}),
+  });
+  if (res.ok) {
+    const d = await res.json();
+    showToast(`New party! Cleared ${d.played_cleared} played songs, ` +
+              `${d.queue_cleared} queued, unbanned ${d.unbanned}.`, 'success');
+    loadSpotifyStatus();
+  } else {
+    showToast('Failed to start new party', 'error');
+  }
+});
+
+$('resume-party-btn').addEventListener('click', async () => {
+  const res = await hostFetch('/api/host/resume_party', {
+    method: 'POST', body: JSON.stringify({}),
+  });
+  if (res.ok) {
+    showToast('Party resumed', 'success');
+    loadSpotifyStatus();
+  }
+});

@@ -1,4 +1,6 @@
 import os
+import re
+import random
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 from spotipy.cache_handler import CacheFileHandler
@@ -84,6 +86,41 @@ def get_current_playback():
         return None
 
 
+# Playback state, for callers that must tell "nothing is playing" apart from
+# "we couldn't find out".
+PLAYBACK_OK = 'ok'
+PLAYBACK_IDLE = 'idle'
+PLAYBACK_ERROR = 'error'
+
+
+def get_playback_state():
+    """Like get_current_playback(), but says *why* there's no track.
+
+    get_current_playback() returns None for a dead token, a network failure and
+    a genuinely idle player alike. The queue worker reads "no track" as "the
+    song ended", so a momentary Wi-Fi drop mid-song used to mark the guest's
+    song played (permanently un-requestable) and skip to the next one.
+
+    Returns {'status': PLAYBACK_OK | PLAYBACK_IDLE | PLAYBACK_ERROR,
+             'playback': <spotify payload or None>,
+             'reason': <short string, only when status is PLAYBACK_ERROR>}
+    """
+    sp = get_spotify()
+    if not sp:
+        # No usable client: the token is missing or refresh failed. That is a
+        # failure, not an idle player.
+        return {'status': PLAYBACK_ERROR, 'playback': None, 'reason': 'not_authenticated'}
+    try:
+        playback = sp.current_playback()
+    except Exception as e:
+        logger.error(f"Error getting current playback: {e}")
+        return {'status': PLAYBACK_ERROR, 'playback': None, 'reason': str(e)}
+
+    if not playback or not playback.get('item'):
+        return {'status': PLAYBACK_IDLE, 'playback': playback}
+    return {'status': PLAYBACK_OK, 'playback': playback}
+
+
 def search_tracks(query, limit=10):
     sp = get_spotify()
     if not sp:
@@ -114,6 +151,12 @@ def play_track(track_uri, device_id=None):
         return False, "Not authenticated with Spotify"
     try:
         sp.start_playback(device_id=device_id, uris=[track_uri])
+        # Best-effort: disable repeat so a finished single track stops instead
+        # of looping (otherwise the queue never advances).
+        try:
+            sp.repeat('off', device_id=device_id)
+        except Exception:
+            pass
         return True, None
     except Exception as e:
         logger.error(f"Error playing track: {e}")
@@ -213,15 +256,80 @@ def clear_jukebox_playlist(playlist_id):
         logger.error(f"Error clearing playlist: {e}")
 
 
-def start_playlist_playback(playlist_id, device_id=None):
-    """Play our jukebox playlist with shuffle and repeat off."""
+PLAYLIST_ID_RE = re.compile(r'^[A-Za-z0-9]{22}$')
+
+
+def parse_playlist_id(url_or_uri):
+    """Extract a playlist id from a share link, a spotify: URI, or a bare id.
+
+    Returns the id, or None if nothing playlist-shaped is found.
+    """
+    if not url_or_uri:
+        return None
+    value = url_or_uri.strip()
+
+    # spotify:playlist:<id>
+    m = re.search(r'playlist[:/]([A-Za-z0-9]{22})', value)
+    if m:
+        return m.group(1)
+
+    # Bare id — strip any ?si=... tracking suffix first.
+    bare = value.split('?')[0].rstrip('/')
+    if PLAYLIST_ID_RE.match(bare):
+        return bare
+    return None
+
+
+def get_playlist_meta(playlist_id):
+    """Return {'id', 'name', 'track_count'} for a playlist, or None if we can't
+    read it (bad id, deleted, or not visible to this account)."""
+    sp = get_spotify()
+    if not sp:
+        return None
+    try:
+        pl = sp.playlist(playlist_id, fields='id,name,tracks.total')
+        return {
+            'id': pl['id'],
+            'name': pl.get('name') or 'Untitled playlist',
+            'track_count': (pl.get('tracks') or {}).get('total', 0),
+        }
+    except Exception as e:
+        logger.error(f"Error reading playlist {playlist_id}: {e}")
+        return None
+
+
+def start_playlist_playback(playlist_id, device_id=None, shuffle=False,
+                            random_offset=False, track_count=None):
+    """Play a playlist. Defaults match the original behaviour (shuffle and
+    repeat off, starting at track 1).
+
+    shuffle:       turn Spotify shuffle on for this context.
+    random_offset: begin on a random track. A context_uri alone always starts
+                   at track 1 even with shuffle enabled, so a party that
+                   restarts the fallback would otherwise hear the same opener
+                   every time.
+    """
     sp = get_spotify()
     if not sp:
         return False, "Not authenticated"
     try:
-        sp.start_playback(device_id=device_id, context_uri=f'spotify:playlist:{playlist_id}')
+        # Shuffle must be set before playback starts, or Spotify applies it
+        # only from the *next* track onward.
         try:
-            sp.shuffle(False, device_id=device_id)
+            sp.shuffle(bool(shuffle), device_id=device_id)
+        except Exception:
+            pass
+
+        kwargs = {'device_id': device_id, 'context_uri': f'spotify:playlist:{playlist_id}'}
+        if random_offset:
+            if track_count is None:
+                meta = get_playlist_meta(playlist_id)
+                track_count = meta['track_count'] if meta else 0
+            if track_count and track_count > 1:
+                kwargs['offset'] = {'position': random.randrange(track_count)}
+
+        sp.start_playback(**kwargs)
+        try:
             sp.repeat('off', device_id=device_id)
         except Exception:
             pass
@@ -240,7 +348,30 @@ def is_playing_our_playlist(playlist_id):
     return context.get('uri') == f'spotify:playlist:{playlist_id}'
 
 
-def get_active_device_id():
+def list_devices():
+    """All Spotify Connect devices visible to this account."""
+    sp = get_spotify()
+    if not sp:
+        return []
+    try:
+        devices = sp.devices() or {}
+        return [
+            {'id': d['id'], 'name': d.get('name', 'Unknown'),
+             'type': d.get('type', ''), 'is_active': bool(d.get('is_active'))}
+            for d in devices.get('devices', []) if d.get('id')
+        ]
+    except Exception as e:
+        logger.error(f"Error listing devices: {e}")
+        return []
+
+
+def get_active_device_id(preferred_device_id=None):
+    """Resolve which device the party should play on.
+
+    Order: the host's pinned device (if it's still online) > whatever Spotify
+    reports as active > first available. Without a pin the last case is a coin
+    flip, which at a party can mean the host's phone instead of the speakers.
+    """
     sp = get_spotify()
     if not sp:
         return None
@@ -248,10 +379,19 @@ def get_active_device_id():
         devices = sp.devices()
         if not devices or not devices.get('devices'):
             return None
-        active = [d for d in devices['devices'] if d['is_active']]
+        available = devices['devices']
+
+        if preferred_device_id:
+            for d in available:
+                if d['id'] == preferred_device_id:
+                    return d['id']
+            logger.warning(
+                f"Pinned device {preferred_device_id} is offline — falling back.")
+
+        active = [d for d in available if d['is_active']]
         if active:
             return active[0]['id']
-        return devices['devices'][0]['id']
+        return available[0]['id']
     except Exception as e:
         logger.error(f"Error getting device ID: {e}")
         return None
