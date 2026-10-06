@@ -402,6 +402,7 @@ def api_status():
             user_has_downvoted = db.user_has_downvoted(current_queue_id, user_id)
 
     pending_queue = db.get_pending_queue()
+    my_upvotes = db.get_user_upvoted_ids(user_id) if user_id else set()
     # Rough wait for each queued song: what's left of the current track plus
     # everything ahead of it.
     etas, wait_ms = [], 0
@@ -439,7 +440,7 @@ def api_status():
                 'nickname': q['nickname'],
                 'dedication': q.get('dedication'),
                 'upvote_count': q['upvote_count'],
-                'user_has_upvoted': db.user_has_upvoted(q['id'], user_id) if user_id else False,
+                'user_has_upvoted': q['id'] in my_upvotes,
                 'eta_ms': eta,
             }
             for q, eta in zip(pending_queue, etas)

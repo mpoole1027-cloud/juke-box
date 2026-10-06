@@ -517,15 +517,17 @@ def get_upvote_count(queue_id):
             conn.close()
 
 
-def user_has_upvoted(queue_id, user_id):
+def get_user_upvoted_ids(user_id):
+    """IDs of every queue item this user has upvoted, in one query. /api/status
+    used to ask per queued song, which with a long queue and many guests
+    polling was most of the server's work."""
     with _db_lock:
         conn = get_connection()
         try:
-            row = conn.execute(
-                "SELECT 1 FROM upvotes WHERE queue_id = ? AND user_id = ?",
-                (queue_id, user_id)
-            ).fetchone()
-            return row is not None
+            rows = conn.execute(
+                "SELECT queue_id FROM upvotes WHERE user_id = ?", (user_id,)
+            ).fetchall()
+            return {r['queue_id'] for r in rows}
         finally:
             conn.close()
 
