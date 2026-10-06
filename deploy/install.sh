@@ -52,7 +52,7 @@ mkdir -p "$AGENTS" "$JUKEBOX_DIR/logs"
 # fight over Spotify. Refuse unless the port belongs to our own launchd job.
 PORT="$(grep -E '^PORT=' "$JUKEBOX_DIR/.env" | tail -1 | cut -d= -f2 | tr -d '[:space:]"')"
 PORT="${PORT:-5001}"
-OWN_PID="$(launchctl print "$DOMAIN/com.partyjukebox.app" 2>/dev/null | awk '/^\tpid =/{print $3}')"
+OWN_PID="$(launchctl print "$DOMAIN/com.partyjukebox.app" 2>/dev/null | awk '/^\tpid =/{print $3}' || true)"
 for pid in $(lsof -t -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null); do
   # The launchd job runs python under caffeinate, so compare parent PIDs too.
   ppid="$(ps -o ppid= -p "$pid" | tr -d ' ')"
