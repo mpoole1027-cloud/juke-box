@@ -64,7 +64,8 @@ phone ──https──▶ party.example.com ──Cloudflare──▶ cloudflar
    .venv/bin/python deploy/preflight.py
    ```
 4. Open `https://party.example.com/host`. Log in and connect Spotify if asked.
-   Pin the playback device in Settings, then click **Start new party**. That
+   Check the playback device in Settings (if the Mac is the only computer
+   running Spotify, it's pinned automatically), then click **Start new party**. That
    gives you a fresh party code.
 5. Put the QR code (or **Copy invite link**) where guests can see it, and open
    **Open TV screen** on the TV.
@@ -82,5 +83,9 @@ phone ──https──▶ party.example.com ──Cloudflare──▶ cloudflar
   background Python from reading BlackHole. If the lights don't react when run
   by `--with-lights`, run party-lights from Terminal once and allow microphone
   access, or keep running it from Terminal.
+- **No DMX adapter, no crash.** If the serial port in party-lights'
+  `settings.yaml` isn't there when the service starts, it runs with the null
+  driver. Plug the adapter in, then restart it:
+  `launchctl kickstart -k gui/$(id -u)/com.partyjukebox.lights`
 - **One jukebox process only.** The queue manager keeps its state in memory;
   never run two copies against the same database.

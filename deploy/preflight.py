@@ -246,7 +246,7 @@ def check_lights():
     if ports:
         ok(f'DMX interface plugged in ({", ".join(ports)})')
     else:
-        warn('No DMX interface found (/dev/cu.usbserial-*)')
+        warn('No DMX interface found (/dev/cu.usbserial-*), so party-lights runs without hardware. After plugging it in: launchctl kickstart -k gui/$(id -u)/com.partyjukebox.lights')
 
 
 def check_power():

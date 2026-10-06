@@ -10,9 +10,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>__LIGHTS_DIR__/.venv/bin/python</string>
-    <string>-m</string>
-    <string>partylights.cli</string>
-    <string>run</string>
+    <string>__JUKEBOX_DIR__/deploy/run_lights.py</string>
   </array>
   <key>WorkingDirectory</key>
   <string>__LIGHTS_DIR__</string>
