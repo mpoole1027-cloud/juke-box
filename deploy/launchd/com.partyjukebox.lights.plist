@@ -20,6 +20,12 @@
   <true/>
   <key>ThrottleInterval</key>
   <integer>10</integer>
+  <!-- Without this, launchd runs the job as a throttled background daemon and
+       macOS coalesces its timer wakeups: the DMX writer, which sleeps in 25 ms
+       steps, measured 20.7 fps with half its frames late against a 40 fps
+       target. Interactive measured 40.0 fps and none late. -->
+  <key>ProcessType</key>
+  <string>Interactive</string>
   <key>StandardOutPath</key>
   <string>__JUKEBOX_DIR__/logs/party-lights.log</string>
   <key>StandardErrorPath</key>
