@@ -61,6 +61,31 @@ def test_no_pin_uses_active_device(qm, db):
     assert qm.get_party_device_id() == 'phone'
 
 
+MAC = {'id': 'mac', 'name': 'MacBook Pro', 'type': 'Computer', 'is_active': False}
+
+
+def test_lone_computer_is_auto_pinned(qm, db):
+    qm.fake.devices.append(dict(MAC))
+    qm.fake.devices[1]['is_active'] = True          # iPhone is active
+    assert qm.get_party_device_id() == 'mac'
+    assert db.get_setting('preferred_device_id') == 'mac'
+
+
+def test_no_auto_pin_without_exactly_one_computer(qm, db):
+    qm.fake.devices[1]['is_active'] = True
+    assert qm.get_party_device_id() == 'phone'      # no computer online
+    qm.fake.devices += [dict(MAC), dict(MAC, id='mac2', name='iMac')]
+    assert qm.get_party_device_id() == 'phone'      # two: ambiguous
+    assert not db.get_setting('preferred_device_id')
+
+
+def test_auto_pin_never_overrides_host_choice(qm, db):
+    qm.fake.devices.append(dict(MAC))
+    db.set_setting('preferred_device_id', 'speaker')
+    assert qm.get_party_device_id() == 'speaker'
+    assert db.get_setting('preferred_device_id') == 'speaker'
+
+
 def test_idle_standby_disabled_by_zero(qm, db):
     db.set_setting('idle_shutdown_hours', 0)
     assert qm.idle_seconds() == 0

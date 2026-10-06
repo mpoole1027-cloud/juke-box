@@ -193,9 +193,21 @@ def _check_downvote_threshold(playing_item):
 
 
 def get_party_device_id():
-    """Resolve the playback device, honouring the host's pinned choice."""
-    return sc.get_active_device_id(
-        preferred_device_id=db.get_setting('preferred_device_id') or None)
+    """Resolve the playback device, honouring the host's pinned choice.
+
+    With nothing pinned and exactly one computer online, pin it: that's the
+    party Mac, and without a pin a guest-visible phone or speaker that grabs
+    Spotify Connect would take over the party. Only computers are auto-pinned,
+    so a phone that happens to be the only device can't stick as the target.
+    """
+    pinned = db.get_setting('preferred_device_id') or None
+    if not pinned:
+        computers = [d for d in sc.list_devices() if d.get('type') == 'Computer']
+        if len(computers) == 1:
+            pinned = computers[0]['id']
+            db.set_setting('preferred_device_id', pinned)
+            logger.info(f"Auto-pinned playback device {computers[0]['name']}.")
+    return sc.get_active_device_id(preferred_device_id=pinned)
 
 
 def get_fallback_playlist_id():
