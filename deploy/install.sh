@@ -89,7 +89,10 @@ install_agent() {
 install_agent com.partyjukebox.app
 [ "$WITH_TUNNEL" = 1 ] && install_agent com.partyjukebox.tunnel
 [ "$WITH_LIGHTS" = 1 ] && install_agent com.partyjukebox.lights
+install_agent com.partyjukebox.watchdog
 
 echo
 echo "Running. Check everything with: .venv/bin/python deploy/preflight.py"
 echo "Logs: $JUKEBOX_DIR/logs/"
+grep -q '^PARTY_ALERTS_WEBHOOK=.' "$JUKEBOX_DIR/.env" ||
+  echo "Alerts only go to logs/watchdog.log until PARTY_ALERTS_WEBHOOK is set in .env (see deploy/README.md)."

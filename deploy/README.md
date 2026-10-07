@@ -70,6 +70,48 @@ phone ──https──▶ party.example.com ──Cloudflare──▶ cloudflar
 5. Put the QR code (or **Copy invite link**) where guests can see it, and open
    **Open TV screen** on the TV.
 
+## Alerts on Discord
+
+The watchdog service (`deploy/watchdog.py`, installed by `install.sh`) checks
+everything every 15 seconds. When something breaks it posts to a Discord channel,
+and it posts again when the problem clears. It watches the three services, the
+jukebox's health and Spotify, the public link, the lights (frozen, stuttering,
+no DMX adapter, deaf to the music), power, disk space, and new crashes in `logs/`.
+It never restarts or changes anything.
+
+Short blips (a service restarting, one slow answer) are ignored. A problem has
+to last 30 seconds to a couple of minutes, depending on what it is. Critical
+alerts mention everyone and repeat every 15 minutes until fixed. Everything
+that happened in one check goes out as one message.
+
+**Setup (about 5 minutes, once):**
+
+1. In Discord, create a server for the party crew and invite the 2–4 people
+   who should get alerts. Keep it private: anyone in it sees the alerts.
+2. Make an `#alerts` channel. Open its settings, then **Integrations →
+   Webhooks → New Webhook**, and copy the webhook URL. Treat that URL like a
+   password, because anyone holding it can post as the watchdog.
+3. Add it to `.env`:
+   ```sh
+   PARTY_ALERTS_WEBHOOK=https://discord.com/api/webhooks/...
+   ```
+   The watchdog re-reads `.env` on every check, so there's no need to restart it.
+   Check it got there: `.venv/bin/python deploy/watchdog.py --test`
+4. Everyone in the server: open the server's notification settings, choose
+   **All Messages**, and allow Discord through any Focus mode you'll have on
+   at the party.
+5. *Optional, and recommended:* if this Mac dies or sleeps, the watchdog dies
+   with it. Make a free check at healthchecks.io with a 1-minute period and a
+   2-minute grace, add a Discord integration to it using the same webhook,
+   and put its ping URL in `.env` as `PARTY_ALERTS_HEARTBEAT_URL`.
+
+**Day to day:**
+
+- `.venv/bin/python deploy/watchdog.py --once` shows what it sees right now.
+- `touch logs/watchdog.mute` silences Discord while you work on the code
+  (restarting a service on purpose alerts too). `rm logs/watchdog.mute` turns
+  it back on. Alerts still go to `logs/watchdog.log` while muted.
+
 ## After the party: share the photos
 
 Guests' disposable camera shots wait in `photos/` on the Mac until you review
