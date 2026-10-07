@@ -28,7 +28,6 @@ function applyTheme(theme) {
 // ----------------------------------------------------------------
 // State
 // ----------------------------------------------------------------
-let prevFireCount = 0;
 let prevHeartCount = 0;
 let prevTrackId = null;
 
@@ -94,7 +93,6 @@ function renderNowPlaying(track, reactions) {
 
   // Song change → clear reactions animation
   if (track.track_id !== prevTrackId) {
-    prevFireCount = 0;
     prevHeartCount = 0;
     prevTrackId = track.track_id;
   }
@@ -135,15 +133,11 @@ function renderNowPlaying(track, reactions) {
   }
 
   // Reaction counters
-  const fireCount = reactions ? (reactions.fire || 0) : 0;
   const heartCount = reactions ? (reactions.heart || 0) : 0;
 
-  $('tv-fire-count').textContent = fireCount;
   $('tv-heart-count').textContent = heartCount;
 
-  if (fireCount > prevFireCount) popReaction('tv-fire-wrap');
   if (heartCount > prevHeartCount) popReaction('tv-heart-wrap');
-  prevFireCount = fireCount;
   prevHeartCount = heartCount;
 }
 
@@ -221,7 +215,7 @@ function renderLeaderboards(lb) {
   }));
   renderLeaderboard('tv-lb-favorites', lb.crowd_favorites, r => ({
     name: escHtml(r.track_name) + ' <span class="tv-lb-sub">— ' + escHtml(r.artist) + '</span>',
-    val: '❤️ ' + r.reaction_count
+    val: '♥️ ' + r.reaction_count
   }));
   renderLeaderboard('tv-lb-skipped', lb.most_skipped, r => ({
     name: escHtml(r.nickname),
@@ -273,7 +267,7 @@ function spawnFloaters(recent) {
     if (feed.childElementCount >= MAX_FLOATERS) break;
     const el = document.createElement('div');
     el.className = 'tv-floater';
-    el.textContent = r.reaction === 'heart' ? '❤️' : '🔥';
+    el.textContent = '♥️';
     // random horizontal position + drift so they don't stack
     const left = 15 + Math.random() * 70;      // 15%–85%
     const drift = (Math.random() * 60 - 30);    // -30px .. +30px
@@ -298,7 +292,7 @@ function buildTickerMessages(data) {
 
   if (lb.crowd_favorites && lb.crowd_favorites.length) {
     const f = lb.crowd_favorites[0];
-    msgs.push(`🔥 Crowd favorite: ${f.track_name} — ${f.artist}`);
+    msgs.push(`♥️ Crowd favorite: ${f.track_name} — ${f.artist}`);
   }
   if (lb.top_djs && lb.top_djs.length) {
     const d = lb.top_djs[0];
@@ -308,7 +302,7 @@ function buildTickerMessages(data) {
     msgs.push(`🎉 ${stats.songs_played} songs played tonight`);
   }
   if (stats.total_reactions) {
-    msgs.push(`💥 ${stats.total_reactions} reactions and counting`);
+    msgs.push(`♥️ ${stats.total_reactions} hearts and counting`);
   }
   if (stats.guest_count) {
     msgs.push(`🕺 ${stats.guest_count} guests in the room`);

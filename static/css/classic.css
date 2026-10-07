@@ -383,6 +383,18 @@ body::before {
   animation: pop 0.3s ease;
 }
 
+.reaction-btn.hearted,
+.reaction-btn.hearted:hover {
+  cursor: default;
+  border-color: #c0392b;
+  transform: none;
+  box-shadow: none;
+}
+
+.reaction-btn.hearted .reaction-count {
+  color: #c0392b;
+}
+
 /* ----------------------------------------------------------------
    Buttons
    ---------------------------------------------------------------- */

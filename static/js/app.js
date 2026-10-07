@@ -56,8 +56,9 @@ let state = {
   current_queue_id: null,
   downvote_count: 0,
   user_has_downvoted: false,
+  user_has_reacted: false,
   queue: [],
-  reactions: { fire: 0, heart: 0 },
+  reactions: { heart: 0 },
   banned_users: [],
   user: null,
   settings: { downvote_threshold: 7 },
@@ -72,7 +73,7 @@ const $ = id => document.getElementById(id);
 // ----------------------------------------------------------------
 // Render functions
 // ----------------------------------------------------------------
-function renderNowPlaying(track, queueId, downvoteCount, userDownvoted, reactions, settings) {
+function renderNowPlaying(track, queueId, downvoteCount, userDownvoted, reactions, userReacted, settings) {
   const section = $('now-playing-section');
   const vinyl = $('vinyl-svg');
   const albumArt = $('album-art-img');
@@ -129,9 +130,15 @@ function renderNowPlaying(track, queueId, downvoteCount, userDownvoted, reaction
     votePips.appendChild(pip);
   }
 
-  // Reactions
-  $('fire-count').textContent = reactions.fire || 0;
+  // Heart: one per guest per song
   $('heart-count').textContent = reactions.heart || 0;
+  renderHeartBtn(!!userReacted, !queueId);
+}
+
+function renderHeartBtn(hearted, unavailable = false) {
+  const btn = $('heart-btn');
+  btn.disabled = hearted || unavailable;
+  btn.classList.toggle('hearted', hearted);
 }
 
 function etaText(ms) {
@@ -378,9 +385,6 @@ function escHtml(str) {
 // ----------------------------------------------------------------
 // Poll status
 // ----------------------------------------------------------------
-let lastFireCount = 0;
-let lastHeartCount = 0;
-
 // ----------------------------------------------------------------
 // "You're up next" / "Now playing" pings (Feature 4)
 // ----------------------------------------------------------------
@@ -570,6 +574,7 @@ async function pollStatus() {
       data.downvote_count,
       data.user_has_downvoted,
       data.reactions,
+      data.user_has_reacted,
       data.settings
     );
     renderQueue(data.queue);
@@ -630,31 +635,33 @@ $('downvote-btn').addEventListener('click', async () => {
 // ----------------------------------------------------------------
 // Reactions
 // ----------------------------------------------------------------
-async function sendReaction(type) {
+async function sendHeart() {
+  const btn = $('heart-btn');
+  renderHeartBtn(true);   // lock immediately so rapid taps send one request
   try {
     const res = await apiFetch('/api/react', {
       method: 'POST',
-      body: JSON.stringify({ reaction: type }),
+      body: JSON.stringify({ reaction: 'heart' }),
     });
     const data = await res.json();
+    if (data.reactions) $('heart-count').textContent = data.reactions.heart;
     if (!res.ok) {
-      showToast(data.error || 'Could not react', 'error');
+      if (!data.user_has_reacted) {
+        renderHeartBtn(false);
+        showToast(data.error || 'Could not react', 'error');
+      }
       return;
     }
-    // Animate button
-    const btn = type === 'fire' ? $('fire-btn') : $('heart-btn');
     btn.classList.remove('popped');
     void btn.offsetWidth;
     btn.classList.add('popped');
-    $('fire-count').textContent = data.reactions.fire;
-    $('heart-count').textContent = data.reactions.heart;
   } catch (e) {
+    renderHeartBtn(false);
     showToast('Network error', 'error');
   }
 }
 
-$('fire-btn').addEventListener('click', () => sendReaction('fire'));
-$('heart-btn').addEventListener('click', () => sendReaction('heart'));
+$('heart-btn').addEventListener('click', sendHeart);
 
 // ----------------------------------------------------------------
 // Search
