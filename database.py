@@ -31,10 +31,10 @@ def _add_sort_order_column(conn):
     conn.execute("UPDATE queue SET sort_order = id WHERE sort_order IS NULL")
 
 
-def _add_dedication_column(conn):
-    """Migration: add dedication to queue if absent."""
+def _add_costume_photo_column(conn):
+    """Migration: add photo (a filename under photos/) to costume_entries if absent."""
     try:
-        conn.execute("ALTER TABLE queue ADD COLUMN dedication TEXT")
+        conn.execute("ALTER TABLE costume_entries ADD COLUMN photo TEXT")
     except Exception:
         pass
 
@@ -43,6 +43,15 @@ def _add_reaction_queue_id_column(conn):
     """Migration: add queue_id to reactions if absent."""
     try:
         conn.execute("ALTER TABLE reactions ADD COLUMN queue_id INTEGER")
+    except Exception:
+        pass
+
+
+def _add_name_set_column(conn):
+    """Migration: add name_set to users if absent. 0 until the guest types a
+    name, so everyone (including guests from before this) is asked once."""
+    try:
+        conn.execute("ALTER TABLE users ADD COLUMN name_set INTEGER DEFAULT 0")
     except Exception:
         pass
 
@@ -120,11 +129,33 @@ def init_db():
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(user_id, shot_id)
                 );
+
+                -- Costume contest. Both tables are per party_code, so a new
+                -- party starts with an empty contest without deleting history.
+                CREATE TABLE IF NOT EXISTS costume_entries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    party_code TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    costume TEXT NOT NULL,
+                    photo TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(party_code, user_id)
+                );
+
+                -- One vote per guest per party; voting again moves it.
+                CREATE TABLE IF NOT EXISTS costume_votes (
+                    party_code TEXT NOT NULL,
+                    voter_id TEXT NOT NULL,
+                    entry_id INTEGER NOT NULL,
+                    voted_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (party_code, voter_id)
+                );
             """)
 
             _add_sort_order_column(conn)
-            _add_dedication_column(conn)
             _add_reaction_queue_id_column(conn)
+            _add_costume_photo_column(conn)
+            _add_name_set_column(conn)
 
             # Insert default settings if not present
             defaults = [
@@ -135,6 +166,7 @@ def init_db():
                 ('party_url', os.environ.get('PARTY_URL', 'http://localhost:5001')),
                 ('camera_enabled', '1'),
                 ('camera_shots_per_guest', os.environ.get('CAMERA_SHOTS_PER_GUEST', '24')),
+                ('costume_phase', 'off'),
             ]
             for key, value in defaults:
                 cursor.execute(
@@ -359,7 +391,7 @@ def get_playing_item():
             conn.close()
 
 
-def add_to_queue(spotify_track_id, track_name, artist, album_art, duration_ms, requested_by, dedication=None):
+def add_to_queue(spotify_track_id, track_name, artist, album_art, duration_ms, requested_by):
     with _db_lock:
         conn = get_connection()
         try:
@@ -368,9 +400,9 @@ def add_to_queue(spotify_track_id, track_name, artist, album_art, duration_ms, r
             ).fetchone()
             next_order = (row['mx'] or 0) + 1
             cursor = conn.execute(
-                "INSERT INTO queue (spotify_track_id, track_name, artist, album_art, duration_ms, requested_by, sort_order, dedication) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (spotify_track_id, track_name, artist, album_art, duration_ms, requested_by, next_order, dedication)
+                "INSERT INTO queue (spotify_track_id, track_name, artist, album_art, duration_ms, requested_by, sort_order) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (spotify_track_id, track_name, artist, album_art, duration_ms, requested_by, next_order)
             )
             conn.commit()
             return cursor.lastrowid
@@ -683,7 +715,7 @@ def set_user_nickname(user_id, nickname):
         conn = get_connection()
         try:
             conn.execute(
-                "UPDATE users SET nickname = ? WHERE user_id = ?",
+                "UPDATE users SET nickname = ?, name_set = 1 WHERE user_id = ?",
                 (nickname, user_id)
             )
             conn.commit()
@@ -917,6 +949,124 @@ def photo_parties():
                 "SUM(status = 'rejected') AS rejected "
                 "FROM photos GROUP BY party_code ORDER BY MAX(created_at) DESC"
             ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Costume contest
+# ---------------------------------------------------------------------------
+# off: hidden. open: guests enter and vote. closed: voting over, results shown.
+COSTUME_PHASES = ('off', 'open', 'closed')
+
+
+def save_costume_entry(party_code, user_id, costume, photo=None):
+    """Enter the contest, or update an existing entry (votes stay with it).
+
+    photo is the stored filename; None keeps the entry's current photo.
+    Returns (entry_id, replaced_photo) so the caller can delete the old file.
+    """
+    with _db_lock:
+        conn = get_connection()
+        try:
+            old = conn.execute(
+                "SELECT photo FROM costume_entries WHERE party_code = ? AND user_id = ?",
+                (party_code, user_id)).fetchone()
+            conn.execute(
+                "INSERT INTO costume_entries (party_code, user_id, costume, photo) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(party_code, user_id) DO UPDATE SET costume = excluded.costume, "
+                "photo = COALESCE(excluded.photo, costume_entries.photo)",
+                (party_code, user_id, costume, photo))
+            conn.commit()
+            entry_id = conn.execute(
+                "SELECT id FROM costume_entries WHERE party_code = ? AND user_id = ?",
+                (party_code, user_id)).fetchone()['id']
+            replaced = old['photo'] if old and photo and old['photo'] != photo else None
+            return entry_id, replaced
+        finally:
+            conn.close()
+
+
+def get_costume_entry(entry_id):
+    with _db_lock:
+        conn = get_connection()
+        try:
+            row = conn.execute("SELECT * FROM costume_entries WHERE id = ?", (entry_id,)).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+
+def delete_costume_entry(entry_id):
+    """Remove an entry and the votes cast for it. Returns the removed row
+    (so the caller can delete its photo file), or None if it didn't exist."""
+    with _db_lock:
+        conn = get_connection()
+        try:
+            row = conn.execute("SELECT * FROM costume_entries WHERE id = ?", (entry_id,)).fetchone()
+            conn.execute("DELETE FROM costume_votes WHERE entry_id = ?", (entry_id,))
+            conn.execute("DELETE FROM costume_entries WHERE id = ?", (entry_id,))
+            conn.commit()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+
+def cast_costume_vote(party_code, voter_id, entry_id):
+    """Vote for an entry, replacing the guest's earlier vote.
+
+    Returns 'ok', 'no_entry' (not in tonight's contest) or 'own_entry'.
+    """
+    with _db_lock:
+        conn = get_connection()
+        try:
+            entry = conn.execute(
+                "SELECT user_id FROM costume_entries WHERE id = ? AND party_code = ?",
+                (entry_id, party_code)).fetchone()
+            if not entry:
+                return 'no_entry'
+            if entry['user_id'] == voter_id:
+                return 'own_entry'
+            conn.execute(
+                "INSERT OR REPLACE INTO costume_votes (party_code, voter_id, entry_id) "
+                "VALUES (?, ?, ?)", (party_code, voter_id, entry_id))
+            conn.commit()
+            return 'ok'
+        finally:
+            conn.close()
+
+
+def get_costume_vote(party_code, voter_id):
+    """The entry this guest voted for tonight, or None."""
+    with _db_lock:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT entry_id FROM costume_votes WHERE party_code = ? AND voter_id = ?",
+                (party_code, voter_id)).fetchone()
+            return row['entry_id'] if row else None
+        finally:
+            conn.close()
+
+
+def costume_board(party_code):
+    """Tonight's entries with nickname and vote count, most votes first.
+
+    Ties go to whoever entered first.
+    """
+    with _db_lock:
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT e.id, e.user_id, e.costume, e.photo, e.created_at, "
+                "COALESCE(u.nickname, '?') AS nickname, COUNT(v.voter_id) AS votes "
+                "FROM costume_entries e "
+                "LEFT JOIN users u ON u.user_id = e.user_id "
+                "LEFT JOIN costume_votes v ON v.entry_id = e.id AND v.party_code = e.party_code "
+                "WHERE e.party_code = ? "
+                "GROUP BY e.id ORDER BY votes DESC, e.created_at, e.id",
+                (party_code,)).fetchall()
             return [dict(r) for r in rows]
         finally:
             conn.close()

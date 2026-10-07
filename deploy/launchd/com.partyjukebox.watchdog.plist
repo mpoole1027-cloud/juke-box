@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: deploy/install.sh fills in __JUKEBOX_DIR__. Read-only: it posts
+     to Discord when PARTY_ALERTS_WEBHOOK is set in .env, and logs either way. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.partyjukebox.watchdog</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__JUKEBOX_DIR__/.venv/bin/python</string>
+    <string>__JUKEBOX_DIR__/deploy/watchdog.py</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__JUKEBOX_DIR__</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>StandardOutPath</key>
+  <string>__JUKEBOX_DIR__/logs/watchdog.log</string>
+  <key>StandardErrorPath</key>
+  <string>__JUKEBOX_DIR__/logs/watchdog.log</string>
+</dict>
+</plist>

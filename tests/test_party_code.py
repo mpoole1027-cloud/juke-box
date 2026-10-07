@@ -34,7 +34,7 @@ def test_guest_without_code_is_turned_away(app_module):
 
 def test_status_without_code_shows_only_now_playing(app_module, db):
     db.get_or_create_host_user()
-    db.add_to_queue('q' * 22, 'Queued', 'Someone', '', 1000, 'host', dedication='secret')
+    db.add_to_queue('q' * 22, 'Queued', 'Someone', '', 1000, 'host')
     data = app_module.app.test_client().get('/api/status').get_json()
     assert data['party_code_required'] is True
     assert data['current_track'] == {

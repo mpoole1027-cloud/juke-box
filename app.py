@@ -1,4 +1,5 @@
 import os
+import hashlib
 import hmac
 import secrets
 import uuid
@@ -6,6 +7,7 @@ import json
 import random
 import io
 import logging
+import time
 from datetime import timedelta
 from functools import wraps
 
@@ -70,6 +72,19 @@ app.config.update(
     SESSION_COOKIE_SECURE=BEHIND_PROXY,
 )
 
+
+@app.template_global()
+def asset(filename):
+    """URL of a static file, stamped with its mtime. Cloudflare tells browsers
+    to cache static files for hours whatever we send, so without the stamp a
+    phone keeps old JS after a deploy and new buttons silently do nothing."""
+    try:
+        version = int(os.path.getmtime(os.path.join(app.static_folder, filename)))
+    except OSError:
+        version = 0
+    return url_for('static', filename=filename, v=version)
+
+
 # ---------------------------------------------------------------------------
 # Rate limiting
 # ---------------------------------------------------------------------------
@@ -108,6 +123,10 @@ ANIMALS = [
     'Gecko', 'Pangolin', 'Axolotl', 'Narwhal', 'Platypus',
     'Quokka', 'Tapir', 'Marmot', 'Binturong', 'Fossa',
 ]
+
+
+# Room for a first and last name, which the name gate asks for.
+NICKNAME_MAX = 32
 
 
 def generate_nickname():
@@ -202,8 +221,8 @@ def _resolve_current_track():
 
     Returns (current_track, playing_queue_item, current_queue_id).
     current_track is the base track dict (or None). When a matching 'playing'
-    queue row is found, current_track is enriched with 'requested_by_nickname'
-    and 'dedication', and playing_queue_item / current_queue_id are populated.
+    queue row is found, current_track is enriched with 'requested_by_nickname',
+    and playing_queue_item / current_queue_id are populated.
     """
     demo_mode = db.get_setting('demo_mode', '0') == '1'
     demo_track_raw = db.get_setting('demo_current_track', '')
@@ -245,7 +264,6 @@ def _resolve_current_track():
             conn.close()
         if playing_queue_item:
             current_track['requested_by_nickname'] = playing_queue_item.get('nickname')
-            current_track['dedication'] = playing_queue_item.get('dedication')
 
     return current_track, playing_queue_item, current_queue_id
 
@@ -259,6 +277,80 @@ def _camera_state(user_id):
         'shots_total': total,
         'shots_left': max(0, total - used),
     }
+
+
+COSTUME_MAX_LEN = 40
+
+
+def _costume_phase():
+    phase = db.get_setting('costume_phase', 'off')
+    return phase if phase in db.COSTUME_PHASES else 'off'
+
+
+def _ranked(board):
+    """The board with a 'rank' on each entry; tied vote counts share a rank."""
+    ranked, rank, prev = [], 0, None
+    for i, e in enumerate(board):
+        if e['votes'] != prev:
+            rank, prev = i + 1, e['votes']
+        ranked.append({**e, 'rank': rank})
+    return ranked
+
+
+def _costume_photo_url(entry):
+    """Where the entry's photo is served. The ?v= changes with the photo, so a
+    replaced photo is never shown from a stale cache."""
+    if not entry.get('photo'):
+        return None
+    version = hashlib.sha1(entry['photo'].encode()).hexdigest()[:10]
+    return url_for('api_costume_photo', entry_id=entry['id'], v=version)
+
+
+def _costume_results(board):
+    """Final standings for guests and the TV. Only ever sent once voting closes."""
+    return [{**{k: e[k] for k in ('id', 'nickname', 'costume', 'votes', 'rank')},
+             'photo_url': _costume_photo_url(e)}
+            for e in _ranked(board)]
+
+
+def _costume_state(user_id):
+    """The contest as a guest sees it. Vote counts stay secret until it closes."""
+    phase = _costume_phase()
+    if phase == 'off':
+        return {'phase': 'off'}
+    party_code = db.get_setting('party_code', '')
+    board = db.costume_board(party_code)
+    mine = next((e for e in board if user_id and e['user_id'] == user_id), None)
+    state = {
+        'phase': phase,
+        'my_entry': {'id': mine['id'], 'costume': mine['costume'],
+                     'photo_url': _costume_photo_url(mine)} if mine else None,
+        'my_vote': db.get_costume_vote(party_code, user_id) if user_id else None,
+    }
+    if phase == 'open':
+        # Alphabetical, so where an entry sits says nothing about its votes.
+        state['entries'] = sorted(
+            ({'id': e['id'], 'nickname': e['nickname'], 'costume': e['costume'],
+              'photo_url': _costume_photo_url(e), 'is_mine': e is mine} for e in board),
+            key=lambda e: (e['costume'].lower(), e['id']))
+    else:
+        state['results'] = _costume_results(board)
+    return state
+
+
+def _costume_tv():
+    """What the TV shows: entry and vote counts while open, the podium once closed."""
+    phase = _costume_phase()
+    if phase == 'off':
+        return {'phase': 'off'}
+    board = db.costume_board(db.get_setting('party_code', ''))
+    tv = {'phase': phase, 'entries': len(board), 'votes': sum(e['votes'] for e in board)}
+    if phase == 'closed':
+        tv['results'] = _costume_results(board)[:5]
+        # Seconds since voting closed, measured here so the TV's clock doesn't matter.
+        closed_at = float(db.get_setting('costume_closed_at', '0') or 0)
+        tv['closed_secs_ago'] = max(0, int(time.time() - closed_at)) if closed_at else None
+    return tv
 
 
 def _guest_issue():
@@ -397,7 +489,7 @@ def host_auth_check():
 def api_status():
     if not has_party_access():
         # Outsiders (and cookieless local pollers like party-lights) see only
-        # what's playing: no queue, nicknames, dedications or settings.
+        # what's playing: no queue, nicknames or settings.
         return jsonify({
             'party_code_required': True,
             'current_track': api_now().get_json()['current_track'],
@@ -457,7 +549,6 @@ def api_status():
                 'status': q['status'],
                 'is_mine': bool(user_id) and q['requested_by'] == user_id,
                 'nickname': q['nickname'],
-                'dedication': q.get('dedication'),
                 'upvote_count': q['upvote_count'],
                 'user_has_upvoted': q['id'] in my_upvotes,
                 'eta_ms': eta,
@@ -470,11 +561,13 @@ def api_status():
             'nickname': user['nickname'],
             'is_banned': bool(user['is_banned']),
         } if user else None,
+        'name_required': not (user and user.get('name_set')),
         'settings': settings,
         'spotify_connected': sc.is_authenticated(),
         'playback_issue': _guest_issue(),
         'ui_theme': _ui_theme(),
         'camera': _camera_state(user_id),
+        'costume': _costume_state(user_id),
     })
 
 
@@ -545,6 +638,10 @@ def api_queue():
     if user['is_banned']:
         return jsonify({'error': 'You are banned from queuing songs.'}), 403
 
+    if not user.get('name_set'):
+        return jsonify({'error': 'Enter your name before queuing a song.',
+                        'code': 'name_required'}), 403
+
     if not sc.is_authenticated():
         return jsonify({'error': 'Spotify not connected'}), 503
 
@@ -554,7 +651,6 @@ def api_queue():
     artist = data.get('artist', '').strip()
     album_art = data.get('album_art', '')
     duration_ms = data.get('duration_ms', 0)
-    ded = (data.get('dedication') or '').strip()[:80] or None
 
     if not track_id or not track_name or not artist:
         return jsonify({'error': 'Missing track info'}), 400
@@ -569,7 +665,7 @@ def api_queue():
     if user_count >= max_per_user:
         return jsonify({'error': f'You already have {max_per_user} songs in the queue!'}), 429
 
-    queue_id = db.add_to_queue(track_id, track_name, artist, album_art, duration_ms, user_id, dedication=ded)
+    queue_id = db.add_to_queue(track_id, track_name, artist, album_art, duration_ms, user_id)
 
     if sc.is_authenticated():
         # The worker's snapshot, not a fresh Spotify call per queued song.
@@ -668,7 +764,7 @@ def api_set_nickname():
     nickname = (data.get('nickname') or '').strip()
     if not nickname:
         return jsonify({'error': 'Nickname cannot be empty'}), 400
-    nickname = nickname[:24]
+    nickname = ' '.join(nickname.split())[:NICKNAME_MAX]
 
     db.set_user_nickname(user_id, nickname)
     return jsonify({'success': True, 'nickname': nickname})
@@ -775,6 +871,124 @@ def api_upload_photo():
     return jsonify({'success': True, 'duplicate': result == 'duplicate', 'shots_left': left})
 
 
+# ---------------------------------------------------------------------------
+# Costume contest (guests)
+# ---------------------------------------------------------------------------
+def _costume_guest():
+    """The calling guest, or an error response if they can't take part right now."""
+    user = get_or_create_user(get_user_id_from_request())
+    if not user:
+        return None, (jsonify({'error': 'Invalid user ID'}), 400)
+    if user['is_banned']:
+        return None, (jsonify({'error': "Silenced guests can't join the costume contest.",
+                               'code': 'banned'}), 403)
+    if _costume_phase() != 'open':
+        return None, (jsonify({'error': 'Costume voting is closed.',
+                               'code': 'contest_closed'}), 409)
+    return user, None
+
+
+@app.route('/api/costume/entry', methods=['POST'])
+@limiter.limit('10 per minute')
+@require_party
+def api_costume_enter():
+    """Enter the contest, or update your entry. Multipart form: costume (what
+    you came as) and photo, which is required to enter and optional after."""
+    user, err = _costume_guest()
+    if err:
+        return err
+    costume = ' '.join((request.form.get('costume') or '').split())
+    if not costume:
+        return jsonify({'error': 'Tell us what you came as!'}), 400
+    if len(costume) > COSTUME_MAX_LEN:
+        return jsonify({'error': f'Keep it under {COSTUME_MAX_LEN} characters.'}), 400
+
+    party_code = db.get_setting('party_code', '')
+    existing = next((e for e in db.costume_board(party_code)
+                     if e['user_id'] == user['user_id']), None)
+    upload = request.files.get('photo')
+    filename = None
+    if upload:
+        try:
+            jpeg = photos.square(upload.read())
+        except photos.PhotoError as e:
+            return jsonify({'error': str(e), 'code': 'bad_photo'}), 400
+        filename = photos.save(jpeg, party_code, subdir='costumes')
+    elif not (existing and existing['photo']):
+        return jsonify({'error': 'Add a photo of your costume so people know who to vote for.',
+                        'code': 'photo_required'}), 400
+
+    entry_id, replaced = db.save_costume_entry(party_code, user['user_id'], costume, filename)
+    if replaced:
+        photos.delete(replaced)
+    entry = db.get_costume_entry(entry_id)
+    return jsonify({'success': True, 'entry': {
+        'id': entry_id, 'costume': costume, 'photo_url': _costume_photo_url(entry)}})
+
+
+@app.route('/api/costume/entry', methods=['DELETE'])
+@limiter.limit('10 per minute')
+@require_party
+def api_costume_withdraw():
+    user, err = _costume_guest()
+    if err:
+        return err
+    mine = next((e for e in db.costume_board(db.get_setting('party_code', ''))
+                 if e['user_id'] == user['user_id']), None)
+    if not mine:
+        return jsonify({'error': "You haven't entered."}), 404
+    _remove_costume_entry(mine['id'])
+    return jsonify({'success': True})
+
+
+def _remove_costume_entry(entry_id):
+    removed = db.delete_costume_entry(entry_id)
+    if removed and removed.get('photo'):
+        photos.delete(removed['photo'])
+    return removed
+
+
+@app.route('/api/costume/photo/<int:entry_id>')
+@require_party
+def api_costume_photo(entry_id):
+    """An entry's photo. Entrants put it up for everyone at the party, so any
+    guest with tonight's code (and the TV) can see it, but only tonight's."""
+    entry = db.get_costume_entry(entry_id)
+    if (not entry or not entry.get('photo')
+            or entry['party_code'] != db.get_setting('party_code', '')):
+        return jsonify({'error': 'Photo not found'}), 404
+    try:
+        path = photos.path_for(entry['photo'])
+    except photos.PhotoError:
+        return jsonify({'error': 'Photo not found'}), 404
+    if not os.path.exists(path):
+        return jsonify({'error': 'Photo file is missing'}), 404
+    res = send_file(path, mimetype='image/jpeg')
+    # The URL changes when the photo does, so the browser may keep it a while.
+    res.headers['Cache-Control'] = 'private, max-age=3600'
+    return res
+
+
+@app.route('/api/costume/vote', methods=['POST'])
+@limiter.limit('20 per minute')
+@require_party
+def api_costume_vote():
+    """Vote for {"entry_id": 3}. Voting again moves your vote."""
+    user, err = _costume_guest()
+    if err:
+        return err
+    try:
+        entry_id = int((request.get_json() or {}).get('entry_id'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Pick a costume to vote for.'}), 400
+    result = db.cast_costume_vote(db.get_setting('party_code', ''), user['user_id'], entry_id)
+    if result == 'own_entry':
+        return jsonify({'error': "Nice try! You can't vote for yourself.", 'code': 'own_entry'}), 403
+    if result == 'no_entry':
+        return jsonify({'error': 'That costume is no longer in the running.'}), 404
+    return jsonify({'success': True, 'my_vote': entry_id})
+
+
 @app.route('/api/tv')
 @require_party
 def api_tv():
@@ -791,7 +1005,6 @@ def api_tv():
             'artist': q['artist'],
             'album_art': q['album_art'],
             'nickname': q['nickname'],
-            'dedication': q.get('dedication'),
             'upvote_count': q['upvote_count'],
         }
         for q in pending_queue
@@ -805,6 +1018,7 @@ def api_tv():
         'leaderboards': db.get_leaderboards(),
         'recent_reactions': db.get_recent_reactions(20),
         'ui_theme': _ui_theme(),
+        'costume': _costume_tv(),
     })
 
 
@@ -999,6 +1213,7 @@ def api_host_new_party():
     data = request.get_json() or {}
     stats = db.start_new_party(clear_users=bool(data.get('clear_users')))
     db.rotate_party_code()
+    db.set_setting('costume_phase', 'off')
     session['party_code'] = db.get_setting('party_code')
     qm.resume_party()
     return jsonify({'success': True, **stats, **party_links()})
@@ -1132,6 +1347,47 @@ def api_host_photo_review():
     except (TypeError, ValueError):
         return jsonify({'error': 'Photo IDs must be numbers.'}), 400
     return jsonify({'success': True, 'changed': changed})
+
+
+# ---------------------------------------------------------------------------
+# Costume contest (host)
+# ---------------------------------------------------------------------------
+@app.route('/api/host/costume')
+@require_host
+def api_host_costume():
+    """The live tally, which only the host sees while voting is open."""
+    party_code = db.get_setting('party_code', '')
+    board = _ranked(db.costume_board(party_code))
+    return jsonify({
+        'phase': _costume_phase(),
+        'entries': [{**{k: e[k] for k in ('id', 'nickname', 'costume', 'votes', 'rank')},
+                     'photo_url': _costume_photo_url(e)} for e in board],
+        'votes': sum(e['votes'] for e in board),
+    })
+
+
+@app.route('/api/host/costume/phase', methods=['POST'])
+@require_host
+def api_host_costume_phase():
+    """{"phase": "open"} starts voting, "closed" ends it and reveals the
+    winner on the TV, "off" hides the contest again."""
+    phase = (request.get_json() or {}).get('phase')
+    if phase not in db.COSTUME_PHASES:
+        return jsonify({'error': 'Phase must be off, open or closed.'}), 400
+    if phase == 'closed' and _costume_phase() != 'closed':
+        db.set_setting('costume_closed_at', time.time())
+    db.set_setting('costume_phase', phase)
+    return jsonify({'success': True, 'phase': phase})
+
+
+@app.route('/api/host/costume/entry/<int:entry_id>', methods=['DELETE'])
+@require_host
+def api_host_costume_remove(entry_id):
+    entry = db.get_costume_entry(entry_id)
+    if not entry or entry['party_code'] != db.get_setting('party_code', ''):
+        return jsonify({'error': 'Entry not found'}), 404
+    _remove_costume_entry(entry_id)
+    return jsonify({'success': True})
 
 
 @app.route('/api/host/demo', methods=['POST'])

@@ -4,9 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>Party Jukebox</title>
-  <link rel="stylesheet" href="/static/css/jukebox.css">
-  <link id="classic-css" rel="stylesheet" href="/static/css/classic.css"{% if ui_theme != 'classic' %} disabled{% endif %}>
-  <link rel="stylesheet" href="/static/css/camera.css">
+  <link rel="stylesheet" href="{{ asset('css/jukebox.css') }}">
+  <link id="classic-css" rel="stylesheet" href="{{ asset('css/classic.css') }}"{% if ui_theme != 'classic' %} disabled{% endif %}>
+  <link rel="stylesheet" href="{{ asset('css/camera.css') }}">
+  <link rel="stylesheet" href="{{ asset('css/costume.css') }}">
   <meta name="theme-color" content="{{ '#1a0c08' if ui_theme == 'classic' else '#f5efe1' }}">
 </head>
 <body>
@@ -59,11 +60,26 @@
     </form>
   </div>
 
+  <!-- Name gate (shown once, after joining, until the guest enters a name) -->
+  <div id="name-gate" class="card hidden" style="text-align:center">
+    <div class="section-header">
+      <h2>WHO'S QUEUING?</h2>
+      <div class="line"></div>
+    </div>
+    <p style="font-size:0.9rem;margin-bottom:12px">Enter your first and last name so everyone knows whose song is playing.</p>
+    <form id="name-form" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+      <input id="name-input" class="search-input" type="text" maxlength="32" autocomplete="name"
+        autocapitalize="words" spellcheck="false" enterkeyhint="go" placeholder="First and last name"
+        aria-label="Your first and last name" style="max-width:260px;padding-left:12px">
+      <button class="btn btn-cyan" type="submit">LET'S GO</button>
+    </form>
+  </div>
+
   <!-- Ban banner (shown only if user is banned) -->
   <div id="ban-banner" class="ban-banner hidden">
     <h2>🚫 SILENCED!</h2>
     <p>You've been SILENCED, <strong id="ban-nickname"></strong>!<br>Your terrible taste has been noted.</p>
-    <p style="margin-top:8px;font-size:0.78rem;color:var(--warning)">You are no longer allowed to queue songs or use the camera.</p>
+    <p style="margin-top:8px;font-size:0.78rem;color:var(--warning)">You are no longer allowed to queue songs, use the camera or vote for costumes.</p>
   </div>
 
   <!-- Main content (hidden when banned) -->
@@ -172,6 +188,41 @@
       </div>
     </div>
 
+    <!-- Costume contest (shown once the host opens it) -->
+    <div id="costume-card" class="card costume-card hidden">
+      <div class="section-header">
+        <h2>COSTUME CONTEST</h2>
+        <div class="line"></div>
+      </div>
+
+      <div id="costume-open" class="hidden">
+        <form id="costume-entry-form" class="costume-entry-form">
+          <p id="costume-entry-label" class="costume-label">What did you come as? Snap a photo and enter the contest:</p>
+          <div class="costume-entry-layout">
+            <button id="costume-photo-btn" class="costume-photo-pick" type="button" aria-label="Add a photo of your costume">
+              <span class="costume-frame"><img id="costume-photo-preview" class="hidden" alt=""></span>
+              <span id="costume-photo-hint" class="costume-photo-hint"><b>📷</b>ADD PHOTO</span>
+            </button>
+            <input id="costume-photo-input" type="file" accept="image/*" hidden>
+            <div class="costume-entry-fields">
+              <input id="costume-input" class="search-input" type="text" maxlength="40" autocomplete="off"
+                placeholder="e.g. Morticia Addams" enterkeyhint="done" aria-label="Your costume">
+              <button id="costume-save-btn" class="btn btn-primary btn-sm" type="submit">ENTER</button>
+              <button id="costume-withdraw-btn" class="costume-link hidden" type="button">Withdraw my entry</button>
+            </div>
+          </div>
+          <p class="costume-fineprint">Your photo is shown to everyone at the party and on the TV.</p>
+        </form>
+        <p class="costume-label">Tap your favorite to vote. You can change your vote until voting closes.</p>
+        <div id="costume-entries" class="costume-grid"></div>
+      </div>
+
+      <div id="costume-closed" class="hidden">
+        <p id="costume-my-result" class="costume-label"></p>
+        <div id="costume-results" class="costume-grid"></div>
+      </div>
+    </div>
+
     <!-- Up Next queue -->
     <div class="card">
       <div class="section-header">
@@ -220,7 +271,8 @@
   </div>
 </div>
 
-<script src="/static/js/app.js"></script>
-<script src="/static/js/camera.js"></script>
+<script src="{{ asset('js/app.js') }}"></script>
+<script src="{{ asset('js/camera.js') }}"></script>
+<script src="{{ asset('js/costume.js') }}"></script>
 </body>
 </html>

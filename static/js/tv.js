@@ -134,15 +134,6 @@ function renderNowPlaying(track, reactions) {
     reqEl.classList.add('hidden');
   }
 
-  // Dedication
-  const dedEl = $('tv-dedication');
-  if (track.dedication) {
-    dedEl.textContent = '“' + track.dedication + '”';
-    dedEl.classList.remove('hidden');
-  } else {
-    dedEl.classList.add('hidden');
-  }
-
   // Reaction counters
   const fireCount = reactions ? (reactions.fire || 0) : 0;
   const heartCount = reactions ? (reactions.heart || 0) : 0;
@@ -183,9 +174,6 @@ function renderQueue(queue) {
     const requester = item.nickname
       ? `<span class="tv-queue-added">added by ${escHtml(item.nickname)}</span>`
       : '';
-    const dedication = item.dedication
-      ? `<div class="tv-queue-ded">“${escHtml(item.dedication)}”</div>`
-      : '';
     return `
     <div class="tv-queue-item">
       <div class="tv-queue-num">${i + 1}</div>
@@ -197,7 +185,6 @@ function renderQueue(queue) {
           ${requester}
           ${upvote}
         </div>
-        ${dedication}
       </div>
     </div>`;
   }).join('');
@@ -326,6 +313,15 @@ function buildTickerMessages(data) {
   if (stats.guest_count) {
     msgs.push(`🕺 ${stats.guest_count} guests in the room`);
   }
+  const costume = data.costume || {};
+  if (costume.phase === 'open') {
+    msgs.unshift('🎃 Costume contest! Vote for your favorite on your phone');
+  } else if (costume.phase === 'closed') {
+    const winners = winnersOf(costume);
+    if (winners.length) {
+      msgs.unshift('👑 Best costume: ' + winners.map(w => `${w.costume} (${w.nickname})`).join(' & '));
+    }
+  }
   if (msgs.length === 0) {
     msgs.push('🎵 WELCOME TO THE PARTY JUKEBOX 🎵');
   }
@@ -354,6 +350,79 @@ function rotateTicker() {
 }
 
 // ----------------------------------------------------------------
+// Costume contest
+// ----------------------------------------------------------------
+const COSTUME_REVEAL_SECS = 90;   // how long the winner fills the screen
+const COSTUME_DRUMROLL_MS = 4000;
+let costumeRevealedAt = null;   // when the reveal on screen closed voting (ms, TV clock)
+let costumeTimers = [];
+
+function winnersOf(c) {
+  return (c.results || []).filter(r => r.rank === 1);
+}
+
+function renderCostume(c) {
+  c = c || { phase: 'off' };
+  const banner = $('tv-costume-banner');
+  banner.classList.toggle('hidden', c.phase !== 'open');
+  if (c.phase === 'open') {
+    $('tv-costume-counts').textContent =
+      `${c.entries} entr${c.entries === 1 ? 'y' : 'ies'} · ${c.votes} vote${c.votes === 1 ? '' : 's'}`;
+  }
+
+  const fresh = c.phase === 'closed' && c.closed_secs_ago != null
+    && c.closed_secs_ago < COSTUME_REVEAL_SECS && winnersOf(c).length > 0;
+  if (!fresh) {
+    if (costumeRevealedAt !== null) hideCostumeReveal();
+    costumeRevealedAt = null;
+    return;
+  }
+  // Same closing as the reveal already running: leave it be. A later one
+  // (the host reopened and closed again) starts over.
+  const closedAt = Date.now() - c.closed_secs_ago * 1000;
+  if (costumeRevealedAt !== null && Math.abs(closedAt - costumeRevealedAt) < 5000) return;
+  hideCostumeReveal();
+  costumeRevealedAt = closedAt;
+  startCostumeReveal(c);
+}
+
+function startCostumeReveal(c) {
+  const winners = winnersOf(c);
+  const tie = winners.length > 1;
+  $('tv-costume-winner-name').textContent = winners.map(w => w.costume).join(' & ');
+  $('tv-costume-winner-who').textContent =
+    (tie ? "It's a tie! " : '') + winners.map(w => w.nickname).join(' & ') +
+    ` · ${winners[0].votes} vote${winners[0].votes === 1 ? '' : 's'}`;
+  const frame = r => r.photo_url
+    ? `<span class="costume-frame"><img src="${escHtml(r.photo_url)}" alt=""></span>`
+    : '';
+  $('tv-costume-winner-photos').innerHTML = winners.slice(0, 3)
+    .map(w => `<div class="tv-costume-winner-photo">${frame(w)}</div>`).join('');
+  const rest = (c.results || []).filter(r => r.rank > 1).slice(0, 3);
+  $('tv-costume-podium').innerHTML = rest.map(r =>
+    `<div>${frame(r)}<span>${r.rank <= 3 ? MEDALS[r.rank - 1] : r.rank} <strong>${escHtml(r.costume)}</strong> · ${escHtml(r.nickname)}</span></div>`
+  ).join('');
+
+  $('tv-costume-reveal').classList.remove('hidden');
+  const age = c.closed_secs_ago * 1000;
+  // A screen that loads mid-reveal skips straight to the winner.
+  const drumroll = Math.max(0, COSTUME_DRUMROLL_MS - age);
+  $('tv-costume-drumroll').classList.toggle('hidden', drumroll === 0);
+  $('tv-costume-winner').classList.toggle('hidden', drumroll > 0);
+  costumeTimers.push(setTimeout(() => {
+    $('tv-costume-drumroll').classList.add('hidden');
+    $('tv-costume-winner').classList.remove('hidden');
+  }, drumroll));
+  costumeTimers.push(setTimeout(hideCostumeReveal, COSTUME_REVEAL_SECS * 1000 - age));
+}
+
+function hideCostumeReveal() {
+  costumeTimers.forEach(clearTimeout);
+  costumeTimers = [];
+  $('tv-costume-reveal').classList.add('hidden');
+}
+
+// ----------------------------------------------------------------
 // Poll
 // ----------------------------------------------------------------
 async function pollTv() {
@@ -375,6 +444,7 @@ async function pollTv() {
     renderLeaderboards(data.leaderboards);
     spawnFloaters(data.recent_reactions);
     renderTicker(data);
+    renderCostume(data.costume);
   } catch (e) {
     console.error('TV poll error:', e);
   }

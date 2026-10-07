@@ -1,0 +1,345 @@
+/* ================================================================
+   COSTUME.CSS  –  Costume contest (guest page and TV)
+
+   Built only from theme tokens, so it follows modern and classic.
+   Photos sit in square frames with bevelled (cut) corners; change
+   --costume-bevel to resize them, or swap the clip-path for a
+   border-radius to round them instead.
+   ================================================================ */
+
+:root { --costume-bevel: 14px; }
+
+/* A square photo frame. The frame's background shows as a thin border
+   around the photo, so the highlight follows the bevelled corners. */
+.costume-frame {
+  --b: var(--costume-bevel);
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  padding: 3px;
+  background: var(--border-dark);
+  clip-path: polygon(var(--b) 0, calc(100% - var(--b)) 0, 100% var(--b),
+                     100% calc(100% - var(--b)), calc(100% - var(--b)) 100%,
+                     var(--b) 100%, 0 calc(100% - var(--b)), 0 var(--b));
+}
+
+.costume-frame img,
+.costume-noimg {
+  --b: calc(var(--costume-bevel) - 2px);
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: var(--card-alt);
+  clip-path: polygon(var(--b) 0, calc(100% - var(--b)) 0, 100% var(--b),
+                     100% calc(100% - var(--b)), calc(100% - var(--b)) 100%,
+                     var(--b) 100%, 0 calc(100% - var(--b)), 0 var(--b));
+}
+
+.costume-noimg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.4rem;
+}
+
+/* ── Entry form ── */
+.costume-label {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+.costume-entry-form { margin-bottom: 18px; }
+
+.costume-entry-layout {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.costume-photo-pick {
+  position: relative;
+  flex: none;
+  width: 104px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: var(--text-dim);
+}
+
+.costume-photo-pick .costume-frame { background: var(--primary); }
+.costume-photo-pick:not(.has-photo) .costume-frame { background: var(--border-dark); }
+
+.costume-photo-hint {
+  position: absolute;
+  inset: 3px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  pointer-events: none;
+}
+
+.costume-photo-hint b { font-size: 1.6rem; line-height: 1; }
+
+.costume-entry-fields {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.costume-entry-fields .search-input {
+  width: 100%;
+  padding-left: 12px;
+}
+
+.costume-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.costume-fineprint {
+  margin-top: 8px;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+/* ── Tile grid ── */
+.costume-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 14px 12px;
+}
+
+.costume-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: center;
+}
+
+button.costume-tile {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.12s ease;
+}
+
+button.costume-tile:active { transform: scale(0.97); }
+button.costume-tile:focus-visible { outline: 2px solid var(--primary); outline-offset: 4px; }
+
+.costume-tile.voted .costume-frame,
+.costume-tile.winner .costume-frame {
+  padding: 5px;
+  background: var(--primary);
+}
+
+.costume-tile.mine .costume-frame { background: var(--olive); }
+
+.costume-tile-name {
+  margin-top: 8px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.98rem;
+  line-height: 1.2;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.costume-tile.voted .costume-tile-name { color: var(--primary); }
+
+.costume-tile-who,
+.costume-tile-votes {
+  margin-top: 2px;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
+.costume-tile-votes { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* Sits on the photo, clear of the bevelled corner. */
+.costume-badge {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  box-shadow: var(--shadow-soft);
+}
+
+.costume-tile.mine .costume-badge { background: var(--olive); }
+
+.costume-badge.rank {
+  padding: 2px 8px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 1rem;
+  letter-spacing: 0;
+}
+
+.costume-empty {
+  grid-column: 1 / -1;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 12px 0;
+}
+
+
+/* ================================================================
+   TV: call to vote and the winner reveal
+   ================================================================ */
+.tv-costume-banner {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 22px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #fff;
+  font-family: var(--font-ui);
+  font-weight: 700;
+  font-size: 1.05rem;
+  white-space: nowrap;
+  box-shadow: var(--shadow-card);
+  animation: tv-costume-pulse 2.4s ease-in-out infinite;
+}
+
+.tv-costume-banner-title {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+}
+
+.tv-costume-counts { opacity: 0.85; font-weight: 500; }
+
+@keyframes tv-costume-pulse {
+  0%, 100% { transform: translateX(-50%) scale(1); }
+  50%      { transform: translateX(-50%) scale(1.04); }
+}
+
+.tv-costume-reveal {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.tv-costume-drumroll {
+  font-family: var(--font-display);
+  font-size: 4rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  animation: tv-costume-throb 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes tv-costume-throb {
+  from { transform: scale(0.98); opacity: 0.75; }
+  to   { transform: scale(1.02); opacity: 1; }
+}
+
+.tv-costume-winner { animation: tv-costume-pop 0.8s cubic-bezier(.2, 1.6, .4, 1) both; }
+
+@keyframes tv-costume-pop {
+  from { transform: scale(0.4); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
+}
+
+.tv-costume-crown { font-size: 5rem; line-height: 1; }
+
+.tv-costume-winner-photos {
+  display: flex;
+  justify-content: center;
+  gap: 32px;
+  margin-top: 10px;
+}
+
+.tv-costume-winner-photo {
+  --costume-bevel: 28px;
+  width: min(44vh, 520px);
+}
+
+.tv-costume-winner-photo .costume-frame {
+  padding: 8px;
+  background: var(--primary);
+}
+
+.tv-costume-winner-name {
+  font-family: var(--font-display);
+  font-size: 4.6rem;
+  font-weight: 700;
+  line-height: 1.05;
+  color: var(--primary);
+  margin-top: 12px;
+  overflow-wrap: anywhere;
+}
+
+.tv-costume-winner-who {
+  font-size: 2rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-top: 8px;
+}
+
+.tv-costume-podium {
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  margin-top: 28px;
+  font-size: 1.3rem;
+  color: var(--text-dim);
+}
+
+.tv-costume-podium > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tv-costume-podium .costume-frame {
+  --costume-bevel: 10px;
+  width: 72px;
+  flex: none;
+}
+
+.tv-costume-podium strong { color: var(--text); }

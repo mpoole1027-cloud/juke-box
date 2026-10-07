@@ -1181,9 +1181,9 @@ input[type="range"]::-webkit-slider-thumb {
    Additive only — do not modify rules above. TV/host agent edits
    below/after are separate.
    New classes: .nickname-text, .nickname-edit-hint, .nickname-input,
-   .nickname-save, .queue-actions, .queue-requester, .queue-dedication,
+   .nickname-save, .queue-actions, .queue-requester,
    .queue-upvote-btn, .queue-upvote-count, .queue-remove-btn,
-   .search-result-wrap, .dedication-row, .dedication-input
+   .search-result-wrap
    ================================================================ */
 
 /* Feature 1: editable nickname */
@@ -1191,7 +1191,8 @@ input[type="range"]::-webkit-slider-thumb {
 .nickname-badge:hover { border-color: var(--olive); background: var(--card); }
 .nickname-badge.nickname-editing { cursor: default; padding: 4px 6px; }
 
-.nickname-text { white-space: nowrap; }
+.nickname-badge { min-width: 0; max-width: 55vw; }
+.nickname-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 
 .nickname-edit-hint {
   font-size: 0.7rem;
@@ -1234,7 +1235,7 @@ input[type="range"]::-webkit-slider-thumb {
 
 .nickname-save:hover { background: var(--olive-dark); border-color: var(--olive-dark); }
 
-/* Feature 2: dedication in the queue flow */
+/* Feature 2: search result wrapper */
 .search-result-wrap {
   border-bottom: 1px solid var(--border);
   animation: slideUp 0.2s ease forwards;
@@ -1244,34 +1245,6 @@ input[type="range"]::-webkit-slider-thumb {
 .search-result-wrap:last-child { border-bottom: none; }
 .search-result-wrap .search-result-item { border-bottom: none; animation: none; opacity: 1; }
 
-.dedication-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 14px 12px 70px;
-}
-
-.dedication-input {
-  flex: 1;
-  min-width: 0;
-  padding: 9px 14px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--text);
-  font-family: 'Inter', sans-serif;
-  font-size: 0.82rem;
-  outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.dedication-input::placeholder { color: var(--text-muted); }
-.dedication-input:focus { border-color: var(--olive); box-shadow: 0 0 0 3px rgba(107,122,63,0.15); }
-
-@media (max-width: 480px) {
-  .dedication-row { padding-left: 14px; }
-}
-
 /* Feature 3: enriched up-next cards */
 .queue-item { align-items: flex-start; }
 
@@ -1279,14 +1252,6 @@ input[type="range"]::-webkit-slider-thumb {
   font-size: 0.7rem;
   color: var(--text-muted);
   margin-top: 3px;
-}
-
-.queue-dedication {
-  font-size: 0.74rem;
-  color: var(--text-muted);
-  font-style: italic;
-  margin-top: 3px;
-  line-height: 1.35;
 }
 
 .queue-actions {
@@ -1359,9 +1324,9 @@ input[type="range"]::-webkit-slider-thumb {
      .tv-dash-now, .tv-wordmark, .tv-no-track, .tv-no-track-title,
      .tv-no-track-sub, .tv-playing-section, .tv-progress,
      .tv-progress-track, .tv-progress-fill, .tv-progress-times,
-     .tv-time, .tv-requester, .tv-dedication, .tv-dash-next,
+     .tv-time, .tv-requester, .tv-dash-next,
      .tv-queue-empty, .tv-queue-art-fallback, .tv-queue-body,
-     .tv-queue-meta, .tv-queue-added, .tv-queue-upvote, .tv-queue-ded,
+     .tv-queue-meta, .tv-queue-added, .tv-queue-upvote,
      .tv-dash-boards, .tv-lb, .tv-lb-title, .tv-lb-list, .tv-lb-row,
      .tv-lb-rank, .tv-lb-medal, .tv-lb-name, .tv-lb-sub, .tv-lb-val,
      .tv-lb-empty, .tv-reaction-feed, .tv-floater
@@ -1512,7 +1477,7 @@ input[type="range"]::-webkit-slider-thumb {
   font-variant-numeric: tabular-nums;
 }
 
-/* Requester + dedication */
+/* Requester */
 .tv-requester {
   margin-top: 18px;
   font-family: 'Inter', sans-serif;
@@ -1521,17 +1486,6 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .tv-requester strong { color: var(--primary); font-weight: 700; }
-
-.tv-dedication {
-  margin-top: 8px;
-  font-family: 'Fraunces', Georgia, serif;
-  font-style: italic;
-  font-size: 1.35rem;
-  color: var(--text);
-  text-align: center;
-  max-width: 520px;
-  line-height: 1.3;
-}
 
 /* Up Next panel ------------------------------------------------- */
 .tv-dash-next {
@@ -1601,19 +1555,6 @@ input[type="range"]::-webkit-slider-thumb {
   font-family: 'Inter', sans-serif;
   font-weight: 700;
   font-size: 0.7rem;
-}
-
-.tv-queue-ded {
-  font-family: 'Inter', sans-serif;
-  font-style: italic;
-  font-size: 0.76rem;
-  color: var(--text-dim);
-  margin-top: 5px;
-  line-height: 1.35;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
 }
 
 /* Leaderboards panel -------------------------------------------- */

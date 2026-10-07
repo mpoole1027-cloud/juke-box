@@ -84,7 +84,7 @@ function showPanel() {
 // Data loading
 // ----------------------------------------------------------------
 async function loadAll() {
-  await Promise.all([loadSpotifyStatus(), loadUsers(), loadStatus(), loadDemoState(), loadCamera()]);
+  await Promise.all([loadSpotifyStatus(), loadUsers(), loadStatus(), loadDemoState(), loadCamera(), loadCostume()]);
 }
 
 async function loadStatus() {
@@ -267,7 +267,6 @@ function renderManageQueue(queue) {
         <div style="font-size:0.68rem;color:var(--text-muted);margin-top:2px">
           added by ${escHtml(item.nickname || '—')}${item.upvote_count > 0 ? ` · 👍 ${item.upvote_count}` : ''}
         </div>
-        ${item.dedication ? `<div style="font-size:0.68rem;color:var(--text-dim);font-style:italic;margin-top:1px">“${escHtml(item.dedication)}”</div>` : ''}
       </div>
     </div>
   `).join('');
@@ -669,3 +668,62 @@ $('camera-shots-slider').addEventListener('change', e => {
   saveCamera({ camera_shots_per_guest: parseInt(e.target.value, 10) },
              `${e.target.value} shots per guest`);
 });
+
+// ----------------------------------------------------------------
+// Costume contest
+// ----------------------------------------------------------------
+const COSTUME_PHASE_TEXT = {
+  off: 'Hidden from guests.',
+  open: 'Voting is open. Guests enter and vote from their phones.',
+  closed: 'Voting closed. The winner is on the TV and every phone.',
+};
+
+async function loadCostume() {
+  try {
+    const res = await hostFetch('/api/host/costume');
+    if (!res.ok) return;
+    const c = await res.json();
+    $('costume-phase-text').textContent = COSTUME_PHASE_TEXT[c.phase] || '';
+    $('costume-open-btn').disabled = c.phase === 'open';
+    $('costume-close-btn').disabled = c.phase !== 'open';
+    $('costume-off-btn').disabled = c.phase === 'off';
+    $('costume-open-btn').textContent = c.phase === 'closed' ? 'REOPEN VOTING' : 'OPEN VOTING';
+    if (!c.entries.length) {
+      $('costume-tally').innerHTML = '<span style="color:var(--text-dim)">No entries yet.</span>';
+      return;
+    }
+    $('costume-tally').innerHTML =
+      `<div style="color:var(--text-dim);margin-bottom:6px">${c.entries.length} entr${c.entries.length === 1 ? 'y' : 'ies'} · ${c.votes} vote${c.votes === 1 ? '' : 's'}</div>` +
+      c.entries.map(e => `
+        <div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-top:1px solid var(--border)">
+          <span style="width:20px;color:var(--text-dim)">${e.rank}</span>
+          ${e.photo_url ? `<a href="${escHtml(e.photo_url)}" target="_blank" rel="noopener"><img src="${escHtml(e.photo_url)}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:6px;display:block"></a>` : ''}
+          <span style="flex:1;min-width:0;overflow-wrap:anywhere"><strong>${escHtml(e.costume)}</strong>
+            <span style="color:var(--text-dim)"> · ${escHtml(e.nickname)}</span></span>
+          <span style="color:var(--primary);font-weight:700">${e.votes}</span>
+          <button class="btn btn-danger btn-sm" type="button" onclick="removeCostume(${e.id})" aria-label="Remove entry">✕</button>
+        </div>`).join('');
+  } catch (e) {}
+}
+
+async function setCostumePhase(phase, okMsg, confirmMsg) {
+  if (confirmMsg && !confirm(confirmMsg)) return;
+  const res = await hostFetch('/api/host/costume/phase', { method: 'POST', body: JSON.stringify({ phase }) });
+  showToast(res.ok ? okMsg : 'Failed to update the costume contest', res.ok ? 'success' : 'error');
+  loadCostume();
+}
+
+window.removeCostume = async (id) => {
+  if (!confirm('Remove this costume entry and its votes?')) return;
+  const res = await hostFetch(`/api/host/costume/entry/${id}`, { method: 'DELETE' });
+  showToast(res.ok ? 'Entry removed' : 'Failed to remove entry', res.ok ? 'success' : 'error');
+  loadCostume();
+};
+
+$('costume-open-btn').addEventListener('click', () =>
+  setCostumePhase('open', 'Costume voting is open'));
+$('costume-close-btn').addEventListener('click', () =>
+  setCostumePhase('closed', 'Voting closed. Winner revealed!',
+                  'Close voting and reveal the winner on the TV?'));
+$('costume-off-btn').addEventListener('click', () =>
+  setCostumePhase('off', 'Costume contest hidden'));

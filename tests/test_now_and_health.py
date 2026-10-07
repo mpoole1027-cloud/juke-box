@@ -14,7 +14,7 @@ def client(qm, monkeypatch):
 
 def test_now_needs_no_code_and_shows_only_the_track(qm, client, db, guest):
     qm.fake.playing, qm.fake.is_playing = TRACK_A, True
-    db.add_to_queue(TRACK_A, 'A', 'x', '', 1000, guest, dedication='private note')
+    db.add_to_queue(TRACK_A, 'A', 'x', '', 1000, guest)
     db.update_queue_status(db.get_pending_queue()[0]['id'], 'playing')
     data = client.get('/api/now').get_json()
     assert data == {'current_track': {

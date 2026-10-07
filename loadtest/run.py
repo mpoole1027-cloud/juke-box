@@ -82,6 +82,8 @@ def guest(rec, base, stop, start_delay, rng):
         return
     s = session()
     rec.call(s, 'GET', base, f'/?p={PARTY_CODE}', name='/ (scan QR)')
+    rec.call(s, 'POST', base, '/api/user/nickname',
+             json={'nickname': f'Guest {rng.randrange(10000)}'})
     queued, last_status = 0, None
     next_action = time.monotonic() + rng.uniform(5, 40)
     while not stop.is_set():

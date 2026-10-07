@@ -30,6 +30,7 @@ async function apiFetch(url, opts = {}) {
     // The party code expired (host started a new party): back to the join form.
     res.clone().json().then(d => {
       if (d && d.code === 'party_code_required') showJoinGate(true);
+      else if (d && d.code === 'name_required') showNameGate(true);
     }).catch(() => {});
   }
   return res;
@@ -149,9 +150,6 @@ function renderQueue(queue) {
     const voted = !!item.user_has_upvoted;
     const count = item.upvote_count || 0;
     const nickname = item.nickname || 'someone';
-    const dedication = item.dedication
-      ? `<div class="queue-dedication">“${escHtml(item.dedication)}”</div>`
-      : '';
     return `
     <div class="queue-item">
       <div class="queue-position">${i + 1}</div>
@@ -164,7 +162,6 @@ function renderQueue(queue) {
         <div class="queue-item-artist">${escHtml(item.artist)}</div>
         <div class="queue-requester">added by ${escHtml(nickname)}</div>
         ${isMine ? `<div class="queue-requester">${etaText(item.eta_ms)}</div>` : ''}
-        ${dedication}
       </div>
       <div class="queue-actions">
         <button class="queue-upvote-btn${voted ? ' voted' : ''}"
@@ -303,7 +300,7 @@ function startNicknameEdit() {
   badge.classList.add('nickname-editing');
   badge.removeAttribute('title');
   badge.innerHTML =
-    `<input id="nickname-input" class="nickname-input" type="text" maxlength="24" ` +
+    `<input id="nickname-input" class="nickname-input" type="text" maxlength="32" ` +
     `value="${escHtml(currentNickname)}" aria-label="Your name">` +
     `<button id="nickname-save" class="nickname-save" title="Save name" type="button">✓</button>`;
 
@@ -338,7 +335,7 @@ function startNicknameEdit() {
 }
 
 async function saveNickname(rawValue) {
-  const value = (rawValue || '').trim().slice(0, 24);
+  const value = (rawValue || '').trim().slice(0, 32);
   isEditingNickname = false;
   if (!value || value === currentNickname) {
     renderNickname(null);
@@ -443,6 +440,7 @@ function showJoinGate(show) {
   if (show) {
     $('main-content').classList.add('hidden');
     $('ban-banner').classList.add('hidden');
+    $('name-gate').classList.add('hidden');
     $('spotify-warning').classList.add('hidden');
     $('playback-issue').classList.add('hidden');
     $('nickname-display').classList.add('hidden');
@@ -450,6 +448,57 @@ function showJoinGate(show) {
     $('nickname-display').classList.remove('hidden');
   }
 }
+
+// ----------------------------------------------------------------
+// Name gate: first visit asks for a real name before anything else
+// ----------------------------------------------------------------
+function showNameGate(show) {
+  const gate = $('name-gate');
+  const wasHidden = gate.classList.contains('hidden');
+  gate.classList.toggle('hidden', !show);
+  if (show) {
+    $('main-content').classList.add('hidden');
+    $('ban-banner').classList.add('hidden');
+    $('nickname-display').classList.add('hidden');
+    // Focus once when it appears, not on every poll.
+    if (wasHidden) $('name-input').focus();
+  }
+}
+
+$('name-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const input = $('name-input');
+  const name = input.value.trim().replace(/\s+/g, ' ');
+  if (!name) {
+    showToast('Please enter your name', 'error');
+    input.focus();
+    return;
+  }
+  const btn = e.submitter || $('name-form').querySelector('button');
+  btn.disabled = true;
+  try {
+    const res = await apiFetch('/api/user/nickname', {
+      method: 'POST',
+      body: JSON.stringify({ nickname: name }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      showToast(data.error || 'Could not save your name', 'error');
+      return;
+    }
+    currentNickname = data.nickname;
+    localStorage.setItem('jukebox_nickname', currentNickname);
+    // They just picked it, so skip the "tap your name to change it" tip.
+    localStorage.setItem('jukebox_name_hint_shown', '1');
+    showNameGate(false);
+    showToast(`Welcome, ${data.nickname}! 🎉`, 'success');
+    pollStatus();
+  } catch (err) {
+    showToast('Network error', 'error');
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 $('join-form').addEventListener('submit', async e => {
   e.preventDefault();
@@ -505,9 +554,14 @@ async function pollStatus() {
       return;
     }
     showJoinGate(false);
+    applyTheme(data.ui_theme);
+    if (data.name_required) {
+      showNameGate(true);
+      return;
+    }
+    showNameGate(false);
     state = data;
 
-    applyTheme(data.ui_theme);
     renderUserBanned(data.user);
     renderNickname(data.user);
     renderNowPlaying(
@@ -522,6 +576,7 @@ async function pollStatus() {
     renderBanned(data.banned_users);
     checkMySongTransitions(data);
     if (typeof Camera !== 'undefined') Camera.update(data.camera);
+    if (typeof Costume !== 'undefined') Costume.update(data.costume);
 
     // Spotify not connected notice
     if (!data.spotify_connected) {
@@ -688,45 +743,19 @@ function renderSearchResults(tracks) {
           data-duration="${t.duration_ms}"
         >QUEUE IT</button>
       </div>
-      <div class="dedication-row hidden">
-        <input class="dedication-input" type="text" maxlength="80"
-          placeholder="Add a dedication (optional)…" aria-label="Dedication">
-        <button class="btn btn-cyan btn-sm dedication-confirm" type="button">ADD →</button>
-      </div>
     </div>
   `).join('');
 
   // Attach queue button listeners
   results.querySelectorAll('.queue-it-btn').forEach(btn => {
-    btn.addEventListener('click', () => revealDedication(btn));
+    btn.addEventListener('click', () => {
+      requestNotifyPermission();
+      queueTrack(btn);
+    });
   });
 }
 
-// Reveal the optional dedication row for a result (Feature 2)
-function revealDedication(queueBtn) {
-  const wrap = queueBtn.closest('.search-result-wrap');
-  if (!wrap) { queueTrack(queueBtn, ''); return; }
-  const row = wrap.querySelector('.dedication-row');
-  const input = wrap.querySelector('.dedication-input');
-  const confirm = wrap.querySelector('.dedication-confirm');
-  if (!row || row.dataset.wired) {
-    // Already revealed — a second QUEUE IT tap just queues with whatever's typed.
-    queueTrack(queueBtn, input ? input.value : '');
-    return;
-  }
-  row.dataset.wired = '1';
-  row.classList.remove('hidden');
-  input.focus();
-  requestNotifyPermission();
-
-  const go = () => queueTrack(queueBtn, input.value);
-  confirm.addEventListener('click', go);
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); go(); }
-  });
-}
-
-async function queueTrack(btn, dedication = '') {
+async function queueTrack(btn) {
   btn.disabled = true;
   btn.textContent = '...';
 
@@ -737,8 +766,6 @@ async function queueTrack(btn, dedication = '') {
     album_art: btn.dataset.albumArt,
     duration_ms: parseInt(btn.dataset.duration, 10),
   };
-  const ded = (dedication || '').trim();
-  if (ded) body.dedication = ded.slice(0, 80);
 
   try {
     const res = await apiFetch('/api/queue', {

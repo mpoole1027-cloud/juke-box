@@ -19,3 +19,6 @@ loadtest/*.prof
 # Disposable camera: guest photos and exported galleries stay on this machine
 photos/
 exports/
+
+# macOS
+.DS_Store

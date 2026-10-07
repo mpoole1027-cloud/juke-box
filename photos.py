@@ -46,13 +46,29 @@ def process(data):
         raise PhotoError("That doesn't look like a photo.")
 
 
+# Costume contest photos are square and only ever shown at phone/TV size.
+SQUARE_EDGE = 1024
+
+
+def square(data, edge=SQUARE_EDGE):
+    """Like process(), but centre-cropped to a square. Returns jpeg_bytes."""
+    jpeg, _, _ = process(data)
+    with Image.open(io.BytesIO(jpeg)) as img:
+        img = ImageOps.fit(img, (min(edge, *img.size),) * 2, Image.LANCZOS)
+        out = io.BytesIO()
+        img.save(out, 'JPEG', quality=JPEG_QUALITY, optimize=True)
+        return out.getvalue()
+
+
 def party_dir(party_code):
     return os.path.join(PHOTOS_DIR, party_code or 'unsorted')
 
 
-def save(jpeg_bytes, party_code):
-    """Write the JPEG under the party's folder. Returns its path relative to PHOTOS_DIR."""
-    folder = party_dir(party_code)
+def save(jpeg_bytes, party_code, subdir=''):
+    """Write the JPEG under the party's folder (or a subfolder of it).
+    Returns its path relative to PHOTOS_DIR."""
+    rel = os.path.join(party_code or 'unsorted', subdir) if subdir else (party_code or 'unsorted')
+    folder = os.path.join(PHOTOS_DIR, rel)
     os.makedirs(folder, exist_ok=True)
     name = f'{uuid.uuid4().hex}.jpg'
     tmp = os.path.join(folder, f'.{name}.tmp')
@@ -60,7 +76,7 @@ def save(jpeg_bytes, party_code):
         f.write(jpeg_bytes)
     # Rename so a crash mid-write never leaves a half photo with a real name.
     os.replace(tmp, os.path.join(folder, name))
-    return os.path.join(party_code or 'unsorted', name)
+    return os.path.join(rel, name)
 
 
 def path_for(filename):

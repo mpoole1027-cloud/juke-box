@@ -87,6 +87,7 @@ AGENTS = {
     'com.partyjukebox.app': ('jukebox', 'jukebox.log'),
     'com.partyjukebox.tunnel': ('tunnel', 'tunnel.log'),
     'com.partyjukebox.lights': ('party-lights', 'party-lights.log'),
+    'com.partyjukebox.watchdog': ('watchdog', 'watchdog.log'),
 }
 
 
