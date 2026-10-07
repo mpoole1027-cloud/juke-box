@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>Party Jukebox</title>
   <link rel="stylesheet" href="{{ asset('css/jukebox.css') }}">
-  <link id="classic-css" rel="stylesheet" href="{{ asset('css/classic.css') }}"{% if ui_theme != 'classic' %} disabled{% endif %}>
+{% include '_theme_links.html' %}
   <link rel="stylesheet" href="{{ asset('css/camera.css') }}">
   <link rel="stylesheet" href="{{ asset('css/costume.css') }}">
-  <meta name="theme-color" content="{{ '#1a0c08' if ui_theme == 'classic' else '#f5efe1' }}">
+  <meta name="theme-color" content="{{ ui_themes[ui_theme].color }}" data-default="{{ ui_themes.modern.color }}">
 </head>
 <body>
 

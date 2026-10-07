@@ -7,12 +7,14 @@
 // ----------------------------------------------------------------
 function applyTheme(theme) {
   if (!theme || document.documentElement.dataset.theme === theme) return;
-  const classic = theme === 'classic';
   document.documentElement.dataset.theme = theme;
-  const link = document.getElementById('classic-css');
-  if (link) link.disabled = !classic;
+  let color = null;
+  document.querySelectorAll('link[data-theme-css]').forEach(link => {
+    link.disabled = link.dataset.themeCss !== theme;
+    if (!link.disabled) color = link.dataset.themeColor;
+  });
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.content = classic ? '#1a0c08' : '#f5efe1';
+  if (meta) meta.content = color || meta.dataset.default;
 }
 
 // ----------------------------------------------------------------

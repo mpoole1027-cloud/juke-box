@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Jukebox Host Panel</title>
   <link rel="stylesheet" href="{{ asset('css/jukebox.css') }}">
-  <link id="classic-css" rel="stylesheet" href="{{ asset('css/classic.css') }}"{% if ui_theme != 'classic' %} disabled{% endif %}>
+{% include '_theme_links.html' %}
 </head>
 <body>
 
@@ -152,16 +152,20 @@
           <h2>APPEARANCE</h2>
           <div class="line"></div>
         </div>
-        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-          <label class="toggle-label">
-            <input type="checkbox" id="classic-toggle">
-            <span class="toggle-switch"></span>
-            Classic look
-          </label>
-          <span style="color:var(--text-dim);font-size:0.78rem">
-            The original diner-jukebox style. Switches every guest phone and the TV.
-          </span>
+        <div id="theme-picker" class="theme-picker" role="radiogroup" aria-label="Look">
+          {% for name, t in ui_themes.items() %}
+          <button type="button" class="theme-chip" role="radio" data-theme-pick="{{ name }}"
+            aria-checked="{{ 'true' if name == ui_theme else 'false' }}">
+            <span class="theme-chip-swatch" aria-hidden="true">
+              {% for c in t.swatch %}<i style="background:{{ c }}"></i>{% endfor %}
+            </span>
+            {{ t.label }}
+          </button>
+          {% endfor %}
         </div>
+        <p style="color:var(--text-dim);font-size:0.78rem;margin-top:10px">
+          Switches every guest phone and the TV within a few seconds.
+        </p>
       </div>
 
       <!-- Demo Mode -->

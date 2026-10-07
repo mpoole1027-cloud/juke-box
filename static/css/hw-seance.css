@@ -1,0 +1,343 @@
+/* ================================================================
+   HW-SEANCE.CSS  –  Halloween: "Séance"
+
+   A candlelit spirit board at the witching hour. Loaded after
+   jukebox.css (and the camera/costume sheets) only when the host
+   picks this look; every rule is scoped to the theme so it wins
+   over the modern base without !important.
+   ================================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cinzel+Decorative:wght@700&family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&display=swap');
+
+html[data-theme="seance"] {
+  --bg:           #0e0a12;
+  --bg-alt:       #1c1522;
+  --card:         #16101b;
+  --card-alt:     #211828;
+  --primary:      #e9b65a;
+  --primary-dark: #c8953c;
+  --olive:        #b48ad0;
+  --olive-dark:   #8f66ab;
+  --accent:       #b48ad0;
+  --text:         #efe4cf;
+  --text-light:   #efe4cf;
+  --text-dim:     #b3a48d;
+  --text-muted:   #7c6f88;
+  --border:       rgba(233,182,90,0.18);
+  --border-dark:  rgba(233,182,90,0.34);
+  --warning:      #e0894a;
+  --danger:       #e0524a;
+  --success:      #8fbf7a;
+  --shadow-soft:  0 1px 0 rgba(255,255,255,0.03) inset, 0 8px 30px rgba(0,0,0,0.45);
+  --shadow-card:  0 12px 40px rgba(0,0,0,0.6);
+  --font-display: 'Cinzel', Georgia, serif;
+  --font-ui:      'Inter', sans-serif;
+  --candle:       rgba(233,182,90,0.55);
+  color-scheme: dark;
+}
+
+/* ── Room: candlelight from below, dust in the air, dark corners ── */
+html[data-theme="seance"] body {
+  background:
+    radial-gradient(120% 60% at 50% 110%, rgba(233,140,60,0.20), transparent 60%),
+    radial-gradient(80% 50% at 50% -10%, rgba(125,74,140,0.22), transparent 70%),
+    var(--bg);
+  background-attachment: fixed;
+}
+html[data-theme="seance"] body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    radial-gradient(1px 1px at 12% 18%, rgba(239,228,207,0.5), transparent),
+    radial-gradient(1px 1px at 78% 9%, rgba(239,228,207,0.35), transparent),
+    radial-gradient(1.5px 1.5px at 64% 42%, rgba(233,182,90,0.4), transparent),
+    radial-gradient(1px 1px at 30% 66%, rgba(239,228,207,0.3), transparent),
+    radial-gradient(1px 1px at 88% 74%, rgba(233,182,90,0.35), transparent),
+    radial-gradient(1px 1px at 46% 88%, rgba(239,228,207,0.25), transparent),
+    radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.55) 100%);
+}
+@media (prefers-reduced-motion: no-preference) {
+  html[data-theme="seance"] body::before { animation: seance-flicker 5s ease-in-out infinite; }
+}
+@keyframes seance-flicker {
+  0%, 100% { opacity: 1; }
+  42%      { opacity: 0.82; }
+  47%      { opacity: 0.97; }
+  71%      { opacity: 0.88; }
+}
+
+/* ── Cards: a board with a double gilt hairline and corner stars ── */
+html[data-theme="seance"] .card,
+html[data-theme="seance"] .ban-banner {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.025), transparent 40%),
+    var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: var(--shadow-soft), 0 0 0 4px var(--card), 0 0 0 5px rgba(233,182,90,0.10);
+  margin-bottom: 22px;
+}
+html[data-theme="seance"] .card::before,
+html[data-theme="seance"] .card::after {
+  content: '✦';
+  position: absolute;
+  top: -9px;
+  font-size: 0.7rem;
+  color: var(--primary);
+  background: var(--bg);
+  padding: 0 5px;
+  line-height: 1.4;
+  text-shadow: 0 0 8px var(--candle);
+}
+html[data-theme="seance"] .card::before { left: 14px; }
+html[data-theme="seance"] .card::after  { right: 14px; }
+html[data-theme="seance"] .search-card { z-index: 20; }
+
+/* ── Header: a crescent sigil and the board's own lettering ── */
+html[data-theme="seance"] .header-brand-icon {
+  font-size: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(233,182,90,0.18), transparent 70%), var(--card);
+  border: 1px solid var(--border-dark);
+  box-shadow: 0 0 18px rgba(233,182,90,0.2);
+}
+html[data-theme="seance"] .header-brand-icon::after {
+  content: '☾';
+  font-size: 1.5rem;
+  color: var(--primary);
+  text-shadow: 0 0 10px var(--candle);
+}
+html[data-theme="seance"] .jukebox-header h1 {
+  font-family: 'Cinzel Decorative', 'Cinzel', serif;
+  font-weight: 700;
+  font-size: 1.6rem;
+  letter-spacing: 0.04em;
+  color: var(--primary);
+  text-shadow: 0 0 14px rgba(233,182,90,0.35);
+}
+html[data-theme="seance"] .tagline {
+  font-family: 'Cormorant Garamond', serif;
+  font-style: italic;
+  font-weight: 600;
+  font-size: 0.86rem;
+  letter-spacing: 0.06em;
+  text-transform: none;
+  color: var(--text-dim);
+}
+html[data-theme="seance"] .nickname-badge {
+  background: transparent;
+  border: 1px solid var(--border-dark);
+  color: var(--text);
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+/* ── Section headings: engraved caps between stars ── */
+html[data-theme="seance"] .section-header h2,
+html[data-theme="seance"] .now-playing-label,
+html[data-theme="seance"] .tv-queue-title,
+html[data-theme="seance"] .tv-lb-title {
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: var(--primary);
+}
+html[data-theme="seance"] .section-header h2::before { content: '☽ '; color: var(--olive); }
+html[data-theme="seance"] .section-header .line {
+  height: 1px;
+  background: linear-gradient(90deg, rgba(233,182,90,0.5), rgba(233,182,90,0.05));
+}
+html[data-theme="seance"] .now-playing-label { text-align: center; }
+
+/* ── Now playing: the record is a lit planchette window ── */
+html[data-theme="seance"] .now-playing-card {
+  background:
+    radial-gradient(70% 55% at 50% 38%, rgba(233,182,90,0.10), transparent 70%),
+    var(--card);
+}
+html[data-theme="seance"] .now-playing-inner { position: relative; }
+html[data-theme="seance"] .now-playing-card::before { content: '☀'; }
+html[data-theme="seance"] .now-playing-card::after  { content: '☾'; }
+html[data-theme="seance"] .vinyl-wrap {
+  width: 88px; height: 88px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--card), 0 0 0 3px rgba(233,182,90,0.6), 0 0 34px rgba(233,182,90,0.35);
+}
+html[data-theme="seance"] .vinyl { width: 88px; height: 88px; }
+html[data-theme="seance"] .album-art-small { width: 36px; height: 36px; top: calc(50% - 18px); left: calc(50% - 18px); }
+html[data-theme="seance"] .vinyl circle:first-child { fill: #08060a; }
+html[data-theme="seance"] .vinyl-label { fill: #7d4a8c; }
+html[data-theme="seance"] .vinyl-label-ring,
+html[data-theme="seance"] .vinyl-rim { stroke: rgba(233,182,90,0.6); }
+html[data-theme="seance"] .vinyl-hole { fill: var(--primary); }
+html[data-theme="seance"] .track-name,
+html[data-theme="seance"] .queue-item-title,
+html[data-theme="seance"] .search-result-title {
+  font-family: 'Cormorant Garamond', serif;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+html[data-theme="seance"] .track-name { font-size: 1.45rem; color: var(--text); }
+html[data-theme="seance"] .queue-item-title,
+html[data-theme="seance"] .search-result-title { font-size: 1.08rem; }
+html[data-theme="seance"] .track-artist {
+  font-family: 'Cinzel', serif;
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--olive);
+}
+html[data-theme="seance"] .progress-bar-wrap { height: 3px; background: rgba(233,182,90,0.12); overflow: visible; }
+html[data-theme="seance"] .progress-bar-fill {
+  position: relative;
+  background: linear-gradient(90deg, rgba(233,182,90,0.2), var(--primary));
+  box-shadow: 0 0 10px var(--candle);
+}
+html[data-theme="seance"] .progress-bar-fill::after {
+  content: '';
+  position: absolute;
+  right: -4px; top: -3px;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: #fff3d6;
+  box-shadow: 0 0 10px 3px rgba(255,200,110,0.8);
+}
+
+/* ── Buttons: brass and smoke ── */
+html[data-theme="seance"] .btn {
+  border-radius: 4px;
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  background: transparent;
+  border-color: var(--border-dark);
+  color: var(--text);
+}
+html[data-theme="seance"] .btn:hover:not(:disabled) { background: rgba(233,182,90,0.08); color: var(--primary); border-color: var(--primary); }
+html[data-theme="seance"] .btn-primary,
+html[data-theme="seance"] .btn-primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #f3cc7e, #d9a145);
+  border-color: #f3cc7e;
+  color: #1a1008;
+  box-shadow: 0 0 22px rgba(233,182,90,0.35);
+}
+html[data-theme="seance"] .btn-cyan,
+html[data-theme="seance"] .btn-cyan:hover:not(:disabled) { background: var(--olive); border-color: var(--olive); color: #120c16; }
+html[data-theme="seance"] .downvote-btn { color: var(--danger); border-color: rgba(224,82,74,0.35); background: rgba(224,82,74,0.05); }
+html[data-theme="seance"] .downvote-btn:hover:not(:disabled) { background: rgba(224,82,74,0.12); border-color: var(--danger); color: var(--danger); }
+html[data-theme="seance"] .vote-meter { background: transparent; border: 1px solid var(--border); border-radius: 4px; }
+html[data-theme="seance"] .vote-meter span { font-family: 'Cinzel', serif; }
+html[data-theme="seance"] .vote-pip { background: transparent; border: 1px solid rgba(224,82,74,0.4); transform: rotate(45deg); border-radius: 1px; width: 10px; height: 10px; }
+html[data-theme="seance"] .vote-pip.filled { background: var(--danger); box-shadow: 0 0 8px rgba(224,82,74,0.7); }
+
+html[data-theme="seance"] .reaction-btn { background: transparent; border-color: var(--border-dark); border-radius: 4px; color: var(--text); }
+html[data-theme="seance"] .reaction-btn:hover { background: rgba(233,182,90,0.08); border-color: var(--primary); }
+html[data-theme="seance"] .reaction-btn.hearted,
+html[data-theme="seance"] .reaction-btn.hearted:hover { border-color: var(--danger); box-shadow: 0 0 16px rgba(224,82,74,0.35); }
+html[data-theme="seance"] .reaction-btn.hearted .reaction-count { color: var(--danger); }
+
+/* ── Inputs ── */
+html[data-theme="seance"] .search-input,
+html[data-theme="seance"] .input-field {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border-dark);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+html[data-theme="seance"] .search-input::placeholder { font-style: italic; }
+html[data-theme="seance"] .search-input:focus,
+html[data-theme="seance"] .input-field:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(233,182,90,0.14), 0 0 22px rgba(233,182,90,0.18); }
+html[data-theme="seance"] .search-results { border-radius: 6px; border-color: var(--border-dark); background: #140e19; }
+
+/* ── Up next ── */
+html[data-theme="seance"] .queue-item {
+  background: rgba(0,0,0,0.22);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+html[data-theme="seance"] .queue-item img { border-radius: 50%; box-shadow: 0 0 0 1px rgba(233,182,90,0.4); }
+html[data-theme="seance"] .queue-position {
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  color: var(--primary);
+  opacity: 0.8;
+}
+html[data-theme="seance"] .queue-upvote-btn { background: transparent; border-color: var(--border-dark); border-radius: 4px; color: var(--text-dim); }
+html[data-theme="seance"] .queue-upvote-btn.voted,
+html[data-theme="seance"] .queue-max-boost { background: rgba(180,138,208,0.14); border-color: rgba(180,138,208,0.45); color: var(--olive); }
+html[data-theme="seance"] .queue-remove-btn { background: transparent; border-radius: 4px; }
+
+/* ── Toasts, misc ── */
+html[data-theme="seance"] .toast { background: #f1dfb6; color: #1a1008; border-radius: 4px; font-family: 'Cormorant Garamond', serif; font-size: 1rem; font-weight: 700; }
+html[data-theme="seance"] .spinner { border-color: rgba(233,182,90,0.2); border-top-color: var(--primary); }
+html[data-theme="seance"] .camera-counter { border-radius: 4px; box-shadow: 0 0 18px rgba(233,182,90,0.18) inset; }
+html[data-theme="seance"] .costume-badge { color: #1a1008; }
+html[data-theme="seance"] .costume-tile-name { font-family: 'Cormorant Garamond', serif; font-size: 1.1rem; }
+html[data-theme="seance"] .badge-ok { background: rgba(143,191,122,0.12); border-color: rgba(143,191,122,0.35); }
+
+/* ================================================================
+   TV
+   ================================================================ */
+html[data-theme="seance"] .tv-dash { background: transparent; }
+html[data-theme="seance"] .tv-statbar { background: rgba(0,0,0,0.35); border-bottom: 1px solid var(--border); }
+html[data-theme="seance"] .tv-stat {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: none;
+}
+html[data-theme="seance"] .tv-stat-num {
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  color: var(--primary);
+  text-shadow: 0 0 18px rgba(233,182,90,0.4);
+}
+html[data-theme="seance"] .tv-stat-label { font-family: 'Cinzel', serif; letter-spacing: 0.3em; color: var(--text-muted); }
+
+/* The full spirit board, painted faintly behind the record */
+html[data-theme="seance"] .tv-dash-now {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1000 700'%3E %3Cdefs%3E %3Cpath id='a' d='M130 400 A370 310 0 0 1 870 400'/%3E %3Cpath id='b' d='M205 400 A295 240 0 0 1 795 400'/%3E %3C/defs%3E %3Cg fill='%23e9b65a' fill-opacity='0.13' font-family='Georgia, serif' text-anchor='middle'%3E %3Ctext font-size='64' letter-spacing='12'%3E%3CtextPath href='%23a' startOffset='50%25'%3EABCDEFGHIJKLM%3C/textPath%3E%3C/text%3E %3Ctext font-size='56' letter-spacing='12'%3E%3CtextPath href='%23b' startOffset='50%25'%3ENOPQRSTUVWXYZ%3C/textPath%3E%3C/text%3E %3Ctext x='40' y='70' font-size='50' letter-spacing='8' text-anchor='start'%3EYES%3C/text%3E %3Ctext x='960' y='70' font-size='50' letter-spacing='8' text-anchor='end'%3ENO%3C/text%3E %3C/g%3E %3C/svg%3E") center 9% / min(92%, 980px) auto no-repeat,
+    radial-gradient(60% 55% at 50% 45%, rgba(233,182,90,0.12), transparent 70%);
+}
+html[data-theme="seance"] .tv-wordmark {
+  font-family: 'Cinzel Decorative', serif;
+  letter-spacing: 0.15em;
+  color: var(--primary);
+  opacity: 0.75;
+}
+html[data-theme="seance"] .tv-vinyl-wrap {
+  border-radius: 50%;
+  box-shadow: 0 0 0 6px var(--bg), 0 0 0 7px rgba(233,182,90,0.55), 0 0 90px rgba(233,182,90,0.3);
+}
+html[data-theme="seance"] .tv-vinyl { filter: none; }
+html[data-theme="seance"] .tv-track-name,
+html[data-theme="seance"] .tv-no-track-title {
+  font-family: 'Cormorant Garamond', serif;
+  font-weight: 700;
+  font-size: 3rem;
+  color: var(--text);
+  text-shadow: 0 0 24px rgba(233,182,90,0.25);
+}
+html[data-theme="seance"] .tv-artist { font-family: 'Cinzel', serif; letter-spacing: 0.3em; color: var(--olive); }
+html[data-theme="seance"] .tv-progress-track { height: 3px; background: rgba(233,182,90,0.15); overflow: visible; }
+html[data-theme="seance"] .tv-progress-fill { background: linear-gradient(90deg, rgba(233,182,90,0.2), var(--primary)); box-shadow: 0 0 12px var(--candle); }
+html[data-theme="seance"] .tv-time { font-family: 'Cinzel', serif; }
+html[data-theme="seance"] .tv-dash-next { background: rgba(0,0,0,0.28); border-left: 1px solid var(--border); }
+html[data-theme="seance"] .tv-queue-item { border-bottom-color: var(--border); }
+html[data-theme="seance"] .tv-queue-track { font-family: 'Cormorant Garamond', serif; font-weight: 700; font-size: 1.2rem; }
+html[data-theme="seance"] .tv-queue-num { font-family: 'Cinzel', serif; color: var(--primary); }
+html[data-theme="seance"] .tv-queue-item img { border-radius: 50%; }
+html[data-theme="seance"] .tv-queue-upvote { background: rgba(180,138,208,0.14); color: var(--olive); }
+html[data-theme="seance"] .tv-dash-boards { background: transparent; border-left: 1px solid var(--border); }
+html[data-theme="seance"] .tv-lb { background: rgba(0,0,0,0.3); border-radius: 4px; border-color: var(--border); }
+html[data-theme="seance"] .tv-lb-name { font-family: 'Cormorant Garamond', serif; font-size: 1.1rem; }
+html[data-theme="seance"] .tv-ticker { background: rgba(0,0,0,0.5); border-top: 1px solid var(--border); }
+html[data-theme="seance"] .tv-ticker-inner { font-family: 'Cinzel', serif; color: var(--primary); letter-spacing: 0.3em; }
+html[data-theme="seance"] .tv-costume-banner { color: #1a1008; border-radius: 4px; background: linear-gradient(180deg, #f3cc7e, #d9a145); }

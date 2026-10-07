@@ -359,12 +359,31 @@ def _guest_issue():
     return {'code': issue['code'], 'message': issue['guest_message']} if issue else None
 
 
-UI_THEMES = ('modern', 'classic')
+# Host-selectable looks. Each non-modern theme is an extra stylesheet loaded
+# after jukebox.css; every page links them all (disabled) so switching is
+# instant. color is the phone browser's theme-color for that look.
+UI_THEMES = {
+    'modern':  {'label': 'Modern',          'css': None,                 'color': '#f5efe1',
+                'swatch': ('#f5efe1', '#c1573a', '#6b7a3f')},
+    'classic': {'label': 'Classic diner',   'css': 'css/classic.css',    'color': '#1a0c08',
+                'swatch': ('#2d1510', '#c41e3a', '#d4af37')},
+    'seance':  {'label': 'Séance',          'css': 'css/hw-seance.css',  'color': '#0e0a12',
+                'swatch': ('#0e0a12', '#e9b65a', '#7d4a8c')},
+    'rental':  {'label': 'Midnight Rental', 'css': 'css/hw-rental.css',  'color': '#07060a',
+                'swatch': ('#07060a', '#ff2e63', '#b8ff3a')},
+    'lantern': {'label': "Jack-o'-Lantern", 'css': 'css/hw-lantern.css', 'color': '#120a06',
+                'swatch': ('#120a06', '#ff7a1a', '#3b2a4d')},
+}
 
 
 def _ui_theme():
     theme = db.get_setting('ui_theme', 'modern')
     return theme if theme in UI_THEMES else 'modern'
+
+
+@app.context_processor
+def _theme_context():
+    return {'ui_themes': UI_THEMES}
 
 
 @app.before_request
@@ -1071,8 +1090,8 @@ def api_host_settings():
     data = request.get_json() or {}
 
     if 'ui_theme' in data:
-        if data['ui_theme'] not in UI_THEMES:
-            return jsonify({'error': 'Theme must be "modern" or "classic".'}), 400
+        if not isinstance(data['ui_theme'], str) or data['ui_theme'] not in UI_THEMES:
+            return jsonify({'error': 'Unknown theme: ' + ', '.join(UI_THEMES) + '.'}), 400
         db.set_setting('ui_theme', data['ui_theme'])
 
     if 'downvote_threshold' in data:
