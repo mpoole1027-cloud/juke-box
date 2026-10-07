@@ -698,6 +698,7 @@ async function loadCostume() {
       c.entries.map(e => `
         <div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-top:1px solid var(--border)">
           <span style="width:20px;color:var(--text-dim)">${e.rank}</span>
+          ${e.photo_url ? `<a href="${escHtml(e.photo_url)}" target="_blank" rel="noopener"><img src="${escHtml(e.photo_url)}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:6px;display:block"></a>` : ''}
           <span style="flex:1;min-width:0;overflow-wrap:anywhere"><strong>${escHtml(e.costume)}</strong>
             <span style="color:var(--text-dim)"> · ${escHtml(e.nickname)}</span></span>
           <span style="color:var(--primary);font-weight:700">${e.votes}</span>

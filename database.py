@@ -39,6 +39,14 @@ def _add_dedication_column(conn):
         pass
 
 
+def _add_costume_photo_column(conn):
+    """Migration: add photo (a filename under photos/) to costume_entries if absent."""
+    try:
+        conn.execute("ALTER TABLE costume_entries ADD COLUMN photo TEXT")
+    except Exception:
+        pass
+
+
 def _add_reaction_queue_id_column(conn):
     """Migration: add queue_id to reactions if absent."""
     try:
@@ -128,6 +136,7 @@ def init_db():
                     party_code TEXT NOT NULL,
                     user_id TEXT NOT NULL,
                     costume TEXT NOT NULL,
+                    photo TEXT,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(party_code, user_id)
                 );
@@ -145,6 +154,7 @@ def init_db():
             _add_sort_order_column(conn)
             _add_dedication_column(conn)
             _add_reaction_queue_id_column(conn)
+            _add_costume_photo_column(conn)
 
             # Insert default settings if not present
             defaults = [
@@ -950,19 +960,29 @@ def photo_parties():
 COSTUME_PHASES = ('off', 'open', 'closed')
 
 
-def save_costume_entry(party_code, user_id, costume):
-    """Enter the contest, or rename an existing entry (votes stay with it)."""
+def save_costume_entry(party_code, user_id, costume, photo=None):
+    """Enter the contest, or update an existing entry (votes stay with it).
+
+    photo is the stored filename; None keeps the entry's current photo.
+    Returns (entry_id, replaced_photo) so the caller can delete the old file.
+    """
     with _db_lock:
         conn = get_connection()
         try:
+            old = conn.execute(
+                "SELECT photo FROM costume_entries WHERE party_code = ? AND user_id = ?",
+                (party_code, user_id)).fetchone()
             conn.execute(
-                "INSERT INTO costume_entries (party_code, user_id, costume) VALUES (?, ?, ?) "
-                "ON CONFLICT(party_code, user_id) DO UPDATE SET costume = excluded.costume",
-                (party_code, user_id, costume))
+                "INSERT INTO costume_entries (party_code, user_id, costume, photo) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(party_code, user_id) DO UPDATE SET costume = excluded.costume, "
+                "photo = COALESCE(excluded.photo, costume_entries.photo)",
+                (party_code, user_id, costume, photo))
             conn.commit()
-            return conn.execute(
+            entry_id = conn.execute(
                 "SELECT id FROM costume_entries WHERE party_code = ? AND user_id = ?",
                 (party_code, user_id)).fetchone()['id']
+            replaced = old['photo'] if old and photo and old['photo'] != photo else None
+            return entry_id, replaced
         finally:
             conn.close()
 
@@ -978,14 +998,16 @@ def get_costume_entry(entry_id):
 
 
 def delete_costume_entry(entry_id):
-    """Remove an entry and the votes cast for it. Returns True if it existed."""
+    """Remove an entry and the votes cast for it. Returns the removed row
+    (so the caller can delete its photo file), or None if it didn't exist."""
     with _db_lock:
         conn = get_connection()
         try:
+            row = conn.execute("SELECT * FROM costume_entries WHERE id = ?", (entry_id,)).fetchone()
             conn.execute("DELETE FROM costume_votes WHERE entry_id = ?", (entry_id,))
-            cursor = conn.execute("DELETE FROM costume_entries WHERE id = ?", (entry_id,))
+            conn.execute("DELETE FROM costume_entries WHERE id = ?", (entry_id,))
             conn.commit()
-            return cursor.rowcount > 0
+            return dict(row) if row else None
         finally:
             conn.close()
 
@@ -1036,7 +1058,7 @@ def costume_board(party_code):
         conn = get_connection()
         try:
             rows = conn.execute(
-                "SELECT e.id, e.user_id, e.costume, e.created_at, "
+                "SELECT e.id, e.user_id, e.costume, e.photo, e.created_at, "
                 "COALESCE(u.nickname, '?') AS nickname, COUNT(v.voter_id) AS votes "
                 "FROM costume_entries e "
                 "LEFT JOIN users u ON u.user_id = e.user_id "

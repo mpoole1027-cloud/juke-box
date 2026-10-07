@@ -182,21 +182,29 @@
 
       <div id="costume-open" class="hidden">
         <form id="costume-entry-form" class="costume-entry-form">
-          <label for="costume-input" id="costume-entry-label" class="costume-label">What did you come as? Enter the contest:</label>
-          <div class="costume-entry-row">
-            <input id="costume-input" class="search-input" type="text" maxlength="40" autocomplete="off"
-              placeholder="e.g. Morticia Addams" enterkeyhint="done">
-            <button id="costume-save-btn" class="btn btn-primary btn-sm" type="submit">ENTER</button>
+          <p id="costume-entry-label" class="costume-label">What did you come as? Snap a photo and enter the contest:</p>
+          <div class="costume-entry-layout">
+            <button id="costume-photo-btn" class="costume-photo-pick" type="button" aria-label="Add a photo of your costume">
+              <span class="costume-frame"><img id="costume-photo-preview" class="hidden" alt=""></span>
+              <span id="costume-photo-hint" class="costume-photo-hint"><b>📷</b>ADD PHOTO</span>
+            </button>
+            <input id="costume-photo-input" type="file" accept="image/*" hidden>
+            <div class="costume-entry-fields">
+              <input id="costume-input" class="search-input" type="text" maxlength="40" autocomplete="off"
+                placeholder="e.g. Morticia Addams" enterkeyhint="done" aria-label="Your costume">
+              <button id="costume-save-btn" class="btn btn-primary btn-sm" type="submit">ENTER</button>
+              <button id="costume-withdraw-btn" class="costume-link hidden" type="button">Withdraw my entry</button>
+            </div>
           </div>
-          <button id="costume-withdraw-btn" class="costume-link hidden" type="button">Withdraw my entry</button>
+          <p class="costume-fineprint">Your photo is shown to everyone at the party and on the TV.</p>
         </form>
-        <p class="costume-label">Vote for your favorite. You can change your vote until voting closes.</p>
-        <div id="costume-entries" class="costume-entries"></div>
+        <p class="costume-label">Tap your favorite to vote. You can change your vote until voting closes.</p>
+        <div id="costume-entries" class="costume-grid"></div>
       </div>
 
       <div id="costume-closed" class="hidden">
         <p id="costume-my-result" class="costume-label"></p>
-        <div id="costume-results" class="costume-entries"></div>
+        <div id="costume-results" class="costume-grid"></div>
       </div>
     </div>
 

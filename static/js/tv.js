@@ -406,9 +406,14 @@ function startCostumeReveal(c) {
   $('tv-costume-winner-who').textContent =
     (tie ? "It's a tie! " : '') + winners.map(w => w.nickname).join(' & ') +
     ` · ${winners[0].votes} vote${winners[0].votes === 1 ? '' : 's'}`;
+  const frame = r => r.photo_url
+    ? `<span class="costume-frame"><img src="${escHtml(r.photo_url)}" alt=""></span>`
+    : '';
+  $('tv-costume-winner-photos').innerHTML = winners.slice(0, 3)
+    .map(w => `<div class="tv-costume-winner-photo">${frame(w)}</div>`).join('');
   const rest = (c.results || []).filter(r => r.rank > 1).slice(0, 3);
   $('tv-costume-podium').innerHTML = rest.map(r =>
-    `<div>${r.rank <= 3 ? MEDALS[r.rank - 1] : r.rank} <strong>${escHtml(r.costume)}</strong> · ${escHtml(r.nickname)}</div>`
+    `<div>${frame(r)}<span>${r.rank <= 3 ? MEDALS[r.rank - 1] : r.rank} <strong>${escHtml(r.costume)}</strong> · ${escHtml(r.nickname)}</span></div>`
   ).join('');
 
   $('tv-costume-reveal').classList.remove('hidden');

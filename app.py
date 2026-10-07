@@ -1,4 +1,5 @@
 import os
+import hashlib
 import hmac
 import secrets
 import uuid
@@ -280,9 +281,19 @@ def _ranked(board):
     return ranked
 
 
+def _costume_photo_url(entry):
+    """Where the entry's photo is served. The ?v= changes with the photo, so a
+    replaced photo is never shown from a stale cache."""
+    if not entry.get('photo'):
+        return None
+    version = hashlib.sha1(entry['photo'].encode()).hexdigest()[:10]
+    return url_for('api_costume_photo', entry_id=entry['id'], v=version)
+
+
 def _costume_results(board):
     """Final standings for guests and the TV. Only ever sent once voting closes."""
-    return [{k: e[k] for k in ('id', 'nickname', 'costume', 'votes', 'rank')}
+    return [{**{k: e[k] for k in ('id', 'nickname', 'costume', 'votes', 'rank')},
+             'photo_url': _costume_photo_url(e)}
             for e in _ranked(board)]
 
 
@@ -296,14 +307,15 @@ def _costume_state(user_id):
     mine = next((e for e in board if user_id and e['user_id'] == user_id), None)
     state = {
         'phase': phase,
-        'my_entry': {'id': mine['id'], 'costume': mine['costume']} if mine else None,
+        'my_entry': {'id': mine['id'], 'costume': mine['costume'],
+                     'photo_url': _costume_photo_url(mine)} if mine else None,
         'my_vote': db.get_costume_vote(party_code, user_id) if user_id else None,
     }
     if phase == 'open':
         # Alphabetical, so where an entry sits says nothing about its votes.
         state['entries'] = sorted(
             ({'id': e['id'], 'nickname': e['nickname'], 'costume': e['costume'],
-              'is_mine': e is mine} for e in board),
+              'photo_url': _costume_photo_url(e), 'is_mine': e is mine} for e in board),
             key=lambda e: (e['costume'].lower(), e['id']))
     else:
         state['results'] = _costume_results(board)
@@ -861,17 +873,38 @@ def _costume_guest():
 @limiter.limit('10 per minute')
 @require_party
 def api_costume_enter():
-    """Enter the contest as {"costume": "Morticia Addams"}, or rename your entry."""
+    """Enter the contest, or update your entry. Multipart form: costume (what
+    you came as) and photo, which is required to enter and optional after."""
     user, err = _costume_guest()
     if err:
         return err
-    costume = ' '.join(((request.get_json() or {}).get('costume') or '').split())
+    costume = ' '.join((request.form.get('costume') or '').split())
     if not costume:
         return jsonify({'error': 'Tell us what you came as!'}), 400
     if len(costume) > COSTUME_MAX_LEN:
         return jsonify({'error': f'Keep it under {COSTUME_MAX_LEN} characters.'}), 400
-    entry_id = db.save_costume_entry(db.get_setting('party_code', ''), user['user_id'], costume)
-    return jsonify({'success': True, 'entry': {'id': entry_id, 'costume': costume}})
+
+    party_code = db.get_setting('party_code', '')
+    existing = next((e for e in db.costume_board(party_code)
+                     if e['user_id'] == user['user_id']), None)
+    upload = request.files.get('photo')
+    filename = None
+    if upload:
+        try:
+            jpeg = photos.square(upload.read())
+        except photos.PhotoError as e:
+            return jsonify({'error': str(e), 'code': 'bad_photo'}), 400
+        filename = photos.save(jpeg, party_code, subdir='costumes')
+    elif not (existing and existing['photo']):
+        return jsonify({'error': 'Add a photo of your costume so people know who to vote for.',
+                        'code': 'photo_required'}), 400
+
+    entry_id, replaced = db.save_costume_entry(party_code, user['user_id'], costume, filename)
+    if replaced:
+        photos.delete(replaced)
+    entry = db.get_costume_entry(entry_id)
+    return jsonify({'success': True, 'entry': {
+        'id': entry_id, 'costume': costume, 'photo_url': _costume_photo_url(entry)}})
 
 
 @app.route('/api/costume/entry', methods=['DELETE'])
@@ -885,8 +918,36 @@ def api_costume_withdraw():
                  if e['user_id'] == user['user_id']), None)
     if not mine:
         return jsonify({'error': "You haven't entered."}), 404
-    db.delete_costume_entry(mine['id'])
+    _remove_costume_entry(mine['id'])
     return jsonify({'success': True})
+
+
+def _remove_costume_entry(entry_id):
+    removed = db.delete_costume_entry(entry_id)
+    if removed and removed.get('photo'):
+        photos.delete(removed['photo'])
+    return removed
+
+
+@app.route('/api/costume/photo/<int:entry_id>')
+@require_party
+def api_costume_photo(entry_id):
+    """An entry's photo. Entrants put it up for everyone at the party, so any
+    guest with tonight's code (and the TV) can see it, but only tonight's."""
+    entry = db.get_costume_entry(entry_id)
+    if (not entry or not entry.get('photo')
+            or entry['party_code'] != db.get_setting('party_code', '')):
+        return jsonify({'error': 'Photo not found'}), 404
+    try:
+        path = photos.path_for(entry['photo'])
+    except photos.PhotoError:
+        return jsonify({'error': 'Photo not found'}), 404
+    if not os.path.exists(path):
+        return jsonify({'error': 'Photo file is missing'}), 404
+    res = send_file(path, mimetype='image/jpeg')
+    # The URL changes when the photo does, so the browser may keep it a while.
+    res.headers['Cache-Control'] = 'private, max-age=3600'
+    return res
 
 
 @app.route('/api/costume/vote', methods=['POST'])
@@ -1281,8 +1342,8 @@ def api_host_costume():
     board = _ranked(db.costume_board(party_code))
     return jsonify({
         'phase': _costume_phase(),
-        'entries': [{k: e[k] for k in ('id', 'nickname', 'costume', 'votes', 'rank')}
-                    for e in board],
+        'entries': [{**{k: e[k] for k in ('id', 'nickname', 'costume', 'votes', 'rank')},
+                     'photo_url': _costume_photo_url(e)} for e in board],
         'votes': sum(e['votes'] for e in board),
     })
 
@@ -1307,7 +1368,7 @@ def api_host_costume_remove(entry_id):
     entry = db.get_costume_entry(entry_id)
     if not entry or entry['party_code'] != db.get_setting('party_code', ''):
         return jsonify({'error': 'Entry not found'}), 404
-    db.delete_costume_entry(entry_id)
+    _remove_costume_entry(entry_id)
     return jsonify({'success': True})
 
 
