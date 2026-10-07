@@ -31,14 +31,6 @@ def _add_sort_order_column(conn):
     conn.execute("UPDATE queue SET sort_order = id WHERE sort_order IS NULL")
 
 
-def _add_dedication_column(conn):
-    """Migration: add dedication to queue if absent."""
-    try:
-        conn.execute("ALTER TABLE queue ADD COLUMN dedication TEXT")
-    except Exception:
-        pass
-
-
 def _add_costume_photo_column(conn):
     """Migration: add photo (a filename under photos/) to costume_entries if absent."""
     try:
@@ -161,7 +153,6 @@ def init_db():
             """)
 
             _add_sort_order_column(conn)
-            _add_dedication_column(conn)
             _add_reaction_queue_id_column(conn)
             _add_costume_photo_column(conn)
             _add_name_set_column(conn)
@@ -400,7 +391,7 @@ def get_playing_item():
             conn.close()
 
 
-def add_to_queue(spotify_track_id, track_name, artist, album_art, duration_ms, requested_by, dedication=None):
+def add_to_queue(spotify_track_id, track_name, artist, album_art, duration_ms, requested_by):
     with _db_lock:
         conn = get_connection()
         try:
@@ -409,9 +400,9 @@ def add_to_queue(spotify_track_id, track_name, artist, album_art, duration_ms, r
             ).fetchone()
             next_order = (row['mx'] or 0) + 1
             cursor = conn.execute(
-                "INSERT INTO queue (spotify_track_id, track_name, artist, album_art, duration_ms, requested_by, sort_order, dedication) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (spotify_track_id, track_name, artist, album_art, duration_ms, requested_by, next_order, dedication)
+                "INSERT INTO queue (spotify_track_id, track_name, artist, album_art, duration_ms, requested_by, sort_order) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (spotify_track_id, track_name, artist, album_art, duration_ms, requested_by, next_order)
             )
             conn.commit()
             return cursor.lastrowid

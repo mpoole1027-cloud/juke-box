@@ -150,9 +150,6 @@ function renderQueue(queue) {
     const voted = !!item.user_has_upvoted;
     const count = item.upvote_count || 0;
     const nickname = item.nickname || 'someone';
-    const dedication = item.dedication
-      ? `<div class="queue-dedication">“${escHtml(item.dedication)}”</div>`
-      : '';
     return `
     <div class="queue-item">
       <div class="queue-position">${i + 1}</div>
@@ -165,7 +162,6 @@ function renderQueue(queue) {
         <div class="queue-item-artist">${escHtml(item.artist)}</div>
         <div class="queue-requester">added by ${escHtml(nickname)}</div>
         ${isMine ? `<div class="queue-requester">${etaText(item.eta_ms)}</div>` : ''}
-        ${dedication}
       </div>
       <div class="queue-actions">
         <button class="queue-upvote-btn${voted ? ' voted' : ''}"
@@ -747,45 +743,19 @@ function renderSearchResults(tracks) {
           data-duration="${t.duration_ms}"
         >QUEUE IT</button>
       </div>
-      <div class="dedication-row hidden">
-        <input class="dedication-input" type="text" maxlength="80"
-          placeholder="Add a dedication (optional)…" aria-label="Dedication">
-        <button class="btn btn-cyan btn-sm dedication-confirm" type="button">ADD →</button>
-      </div>
     </div>
   `).join('');
 
   // Attach queue button listeners
   results.querySelectorAll('.queue-it-btn').forEach(btn => {
-    btn.addEventListener('click', () => revealDedication(btn));
+    btn.addEventListener('click', () => {
+      requestNotifyPermission();
+      queueTrack(btn);
+    });
   });
 }
 
-// Reveal the optional dedication row for a result (Feature 2)
-function revealDedication(queueBtn) {
-  const wrap = queueBtn.closest('.search-result-wrap');
-  if (!wrap) { queueTrack(queueBtn, ''); return; }
-  const row = wrap.querySelector('.dedication-row');
-  const input = wrap.querySelector('.dedication-input');
-  const confirm = wrap.querySelector('.dedication-confirm');
-  if (!row || row.dataset.wired) {
-    // Already revealed — a second QUEUE IT tap just queues with whatever's typed.
-    queueTrack(queueBtn, input ? input.value : '');
-    return;
-  }
-  row.dataset.wired = '1';
-  row.classList.remove('hidden');
-  input.focus();
-  requestNotifyPermission();
-
-  const go = () => queueTrack(queueBtn, input.value);
-  confirm.addEventListener('click', go);
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); go(); }
-  });
-}
-
-async function queueTrack(btn, dedication = '') {
+async function queueTrack(btn) {
   btn.disabled = true;
   btn.textContent = '...';
 
@@ -796,8 +766,6 @@ async function queueTrack(btn, dedication = '') {
     album_art: btn.dataset.albumArt,
     duration_ms: parseInt(btn.dataset.duration, 10),
   };
-  const ded = (dedication || '').trim();
-  if (ded) body.dedication = ded.slice(0, 80);
 
   try {
     const res = await apiFetch('/api/queue', {

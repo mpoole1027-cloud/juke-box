@@ -221,8 +221,8 @@ def _resolve_current_track():
 
     Returns (current_track, playing_queue_item, current_queue_id).
     current_track is the base track dict (or None). When a matching 'playing'
-    queue row is found, current_track is enriched with 'requested_by_nickname'
-    and 'dedication', and playing_queue_item / current_queue_id are populated.
+    queue row is found, current_track is enriched with 'requested_by_nickname',
+    and playing_queue_item / current_queue_id are populated.
     """
     demo_mode = db.get_setting('demo_mode', '0') == '1'
     demo_track_raw = db.get_setting('demo_current_track', '')
@@ -264,7 +264,6 @@ def _resolve_current_track():
             conn.close()
         if playing_queue_item:
             current_track['requested_by_nickname'] = playing_queue_item.get('nickname')
-            current_track['dedication'] = playing_queue_item.get('dedication')
 
     return current_track, playing_queue_item, current_queue_id
 
@@ -490,7 +489,7 @@ def host_auth_check():
 def api_status():
     if not has_party_access():
         # Outsiders (and cookieless local pollers like party-lights) see only
-        # what's playing: no queue, nicknames, dedications or settings.
+        # what's playing: no queue, nicknames or settings.
         return jsonify({
             'party_code_required': True,
             'current_track': api_now().get_json()['current_track'],
@@ -550,7 +549,6 @@ def api_status():
                 'status': q['status'],
                 'is_mine': bool(user_id) and q['requested_by'] == user_id,
                 'nickname': q['nickname'],
-                'dedication': q.get('dedication'),
                 'upvote_count': q['upvote_count'],
                 'user_has_upvoted': q['id'] in my_upvotes,
                 'eta_ms': eta,
@@ -653,7 +651,6 @@ def api_queue():
     artist = data.get('artist', '').strip()
     album_art = data.get('album_art', '')
     duration_ms = data.get('duration_ms', 0)
-    ded = (data.get('dedication') or '').strip()[:80] or None
 
     if not track_id or not track_name or not artist:
         return jsonify({'error': 'Missing track info'}), 400
@@ -668,7 +665,7 @@ def api_queue():
     if user_count >= max_per_user:
         return jsonify({'error': f'You already have {max_per_user} songs in the queue!'}), 429
 
-    queue_id = db.add_to_queue(track_id, track_name, artist, album_art, duration_ms, user_id, dedication=ded)
+    queue_id = db.add_to_queue(track_id, track_name, artist, album_art, duration_ms, user_id)
 
     if sc.is_authenticated():
         # The worker's snapshot, not a fresh Spotify call per queued song.
@@ -1008,7 +1005,6 @@ def api_tv():
             'artist': q['artist'],
             'album_art': q['album_art'],
             'nickname': q['nickname'],
-            'dedication': q.get('dedication'),
             'upvote_count': q['upvote_count'],
         }
         for q in pending_queue

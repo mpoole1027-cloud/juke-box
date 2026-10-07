@@ -134,15 +134,6 @@ function renderNowPlaying(track, reactions) {
     reqEl.classList.add('hidden');
   }
 
-  // Dedication
-  const dedEl = $('tv-dedication');
-  if (track.dedication) {
-    dedEl.textContent = '“' + track.dedication + '”';
-    dedEl.classList.remove('hidden');
-  } else {
-    dedEl.classList.add('hidden');
-  }
-
   // Reaction counters
   const fireCount = reactions ? (reactions.fire || 0) : 0;
   const heartCount = reactions ? (reactions.heart || 0) : 0;
@@ -183,9 +174,6 @@ function renderQueue(queue) {
     const requester = item.nickname
       ? `<span class="tv-queue-added">added by ${escHtml(item.nickname)}</span>`
       : '';
-    const dedication = item.dedication
-      ? `<div class="tv-queue-ded">“${escHtml(item.dedication)}”</div>`
-      : '';
     return `
     <div class="tv-queue-item">
       <div class="tv-queue-num">${i + 1}</div>
@@ -197,7 +185,6 @@ function renderQueue(queue) {
           ${requester}
           ${upvote}
         </div>
-        ${dedication}
       </div>
     </div>`;
   }).join('');

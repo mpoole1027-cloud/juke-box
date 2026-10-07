@@ -5,7 +5,7 @@
    "Classic look". Part 1 is the original stylesheet verbatim, so the
    shared classes snap back to the old design. Part 2 bridges the
    modern token names and restyles markup that only exists in the
-   new UI (nicknames, upvotes, dedications, the TV dashboard).
+   new UI (nicknames, upvotes, the TV dashboard).
    ================================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=Playfair+Display+SC:wght@400;700&display=swap');
@@ -1317,14 +1317,11 @@ input[type="range"]::-webkit-slider-thumb {
 .nickname-edit-hint { color: rgba(253,246,227,0.6); }
 
 .nickname-input,
-.dedication-input,
 .queue-upvote-btn,
 .queue-upvote-count { font-family: Georgia, serif; }
 
-.nickname-input,
-.dedication-input:focus { border-color: var(--accent); }
-.nickname-input:focus,
-.dedication-input:focus { box-shadow: 0 0 0 3px rgba(212,175,55,0.2); }
+.nickname-input { border-color: var(--accent); }
+.nickname-input:focus { box-shadow: 0 0 0 3px rgba(212,175,55,0.2); }
 
 .nickname-save,
 .nickname-save:hover {
@@ -1334,7 +1331,6 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .queue-requester  { color: var(--text-dim); }
-.queue-dedication { color: var(--text-dim); }
 
 .queue-upvote-btn:hover:not(:disabled) { border-color: var(--accent); }
 .queue-upvote-btn.voted {
@@ -1380,7 +1376,6 @@ input[type="range"]::-webkit-slider-thumb {
   letter-spacing: 6px;
   text-shadow: 0 0 24px rgba(212,175,55,0.35);
 }
-.tv-dedication { font-family: 'Playfair Display', Georgia, serif; }
 
 .tv-stat-label,
 .tv-wordmark,
@@ -1392,7 +1387,6 @@ input[type="range"]::-webkit-slider-thumb {
 .tv-queue-empty,
 .tv-queue-added,
 .tv-queue-upvote,
-.tv-queue-ded,
 .tv-lb-row,
 .tv-lb-empty { font-family: Georgia, serif; }
 
