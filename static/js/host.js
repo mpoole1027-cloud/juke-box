@@ -265,7 +265,7 @@ function renderManageQueue(queue) {
         <div class="manage-queue-title">${escHtml(item.track_name)}</div>
         <div class="manage-queue-artist">${escHtml(item.artist)}</div>
         <div style="font-size:0.68rem;color:var(--text-muted);margin-top:2px">
-          added by ${escHtml(item.nickname || '—')}${item.upvote_count > 0 ? ` · 👍 ${item.upvote_count}` : ''}
+          added by ${escHtml(item.nickname || '—')}${item.upvote_count > 0 ? ` · 👍 ${item.upvote_count}` : ''}${item.skips_maxed ? ' · ⏫ max boost' : ''}
         </div>
       </div>
     </div>
@@ -631,6 +631,7 @@ async function loadCamera() {
     if (!res.ok) return;
     const cam = await res.json();
     $('camera-toggle').checked = cam.enabled;
+    $('camera-filter-toggle').checked = cam.viewfinder_filter;
     const slider = $('camera-shots-slider');
     if (slider.dataset.loaded !== 'true') {
       slider.value = cam.shots_per_guest;
@@ -658,6 +659,11 @@ async function saveCamera(body, okMsg) {
 $('camera-toggle').addEventListener('change', e => {
   saveCamera({ camera_enabled: e.target.checked },
              e.target.checked ? 'Camera on' : 'Camera off');
+});
+
+$('camera-filter-toggle').addEventListener('change', e => {
+  saveCamera({ camera_viewfinder_filter: e.target.checked },
+             e.target.checked ? 'Viewfinder filter on' : 'Viewfinder filter off');
 });
 
 $('camera-shots-slider').addEventListener('input', e => {

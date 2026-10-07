@@ -23,6 +23,12 @@ _last_playing_queue_id = None
 # playlist tracks are False, which keeps them out of played_tracks.
 _current_is_ours = False
 _stop_event = threading.Event()
+# When we last told Spotify to play a queued song. Spotify takes a moment to
+# report a track it was just told to play, so for this long afterwards a guest
+# queuing right behind another must not take the player for idle and start
+# their own song over the one that just began.
+PLAY_GRACE_SECONDS = 10
+_last_play_started = 0.0
 
 # Idle standby. A forgotten server once controlled this account's playback for
 # 44 days; after IDLE_SHUTDOWN_HOURS with no guest or host action the worker
@@ -303,6 +309,7 @@ def _advance_to_next_pending():
     Returns the started queue item, or None if we fell back / did nothing.
     """
     global _current_spotify_track_id, _last_playing_queue_id, _current_is_ours
+    global _last_play_started
     device_id = get_party_device_id()
     pending = db.get_pending_queue()
     if pending:
@@ -311,6 +318,7 @@ def _advance_to_next_pending():
         note_play_result(ok, err, device_id)
         if ok:
             invalidate_playback_cache()
+            _last_play_started = time.monotonic()
             db.update_queue_status(next_item['id'], 'playing')
             _current_spotify_track_id = next_item['spotify_track_id']
             _last_playing_queue_id = next_item['id']
@@ -333,6 +341,25 @@ def advance_to_next_pending():
     tracking globals.
     """
     with _lock:
+        return _advance_to_next_pending()
+
+
+def play_if_idle():
+    """Start the next pending song if nothing is playing; for the routes that
+    queue a song. Two guests queuing a second apart used to both see an idle
+    player and both start their song, the second cutting off the first and
+    leaving it marked 'playing' for good. The check and the play now happen
+    together under _lock, and a song we only just started counts as playing.
+
+    Returns the started queue item, or None.
+    """
+    # The worker's snapshot, fetched outside _lock as it may hit the network.
+    playback = get_cached_playback()
+    if playback and playback.get('is_playing'):
+        return None
+    with _lock:
+        if time.monotonic() - _last_play_started < PLAY_GRACE_SECONDS:
+            return None
         return _advance_to_next_pending()
 
 

@@ -163,7 +163,7 @@ function renderQueue(queue) {
       ? `<img src="${escHtml(item.album_art)}" alt="art">`
       : `<div class="tv-queue-art-fallback">🎵</div>`;
     const upvote = (item.upvote_count > 0)
-      ? `<span class="tv-queue-upvote">👍 ${item.upvote_count}</span>`
+      ? `<span class="tv-queue-upvote">👍 ${item.upvote_count}${item.skips_maxed ? ' · ⏫ max' : ''}</span>`
       : '';
     const requester = item.nickname
       ? `<span class="tv-queue-added">added by ${escHtml(item.nickname)}</span>`

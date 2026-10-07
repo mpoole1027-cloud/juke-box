@@ -85,6 +85,46 @@
   <!-- Main content (hidden when banned) -->
   <div id="main-content" class="hidden">
 
+    <!-- Disposable camera -->
+    <div id="camera-card" class="card camera-card hidden">
+      <div class="section-header">
+        <h2>DISPOSABLE CAMERA</h2>
+        <div class="line"></div>
+      </div>
+      <div class="camera-card-body">
+        <div class="camera-counter" aria-label="Shots left">
+          <span id="camera-shots-left">0</span>
+          <small>SHOTS LEFT</small>
+        </div>
+        <div style="flex:1;min-width:0">
+          <p id="camera-status" class="camera-status"></p>
+          <button id="camera-open-btn" class="btn btn-primary" type="button">📸 OPEN CAMERA</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Search -->
+    <div class="card card-cyan search-card">
+      <div class="section-header">
+        <h2>SEARCH</h2>
+        <div class="line"></div>
+      </div>
+      <div id="search-wrap" class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input
+          id="search-input"
+          class="search-input"
+          type="text"
+          placeholder="Search for a song or artist..."
+          enterkeyhint="search"
+          autocomplete="off"
+          autocorrect="off"
+          spellcheck="false"
+        >
+        <div id="search-results" class="search-results"></div>
+      </div>
+    </div>
+
     <!-- Now Playing -->
     <div class="card now-playing-card">
       <div class="now-playing-label">▶ NOW PLAYING</div>
@@ -145,44 +185,13 @@
       </div>
     </div>
 
-    <!-- Search -->
-    <div class="card card-cyan search-card">
+    <!-- Up Next queue -->
+    <div class="card">
       <div class="section-header">
-        <h2>SEARCH</h2>
+        <h2>UP NEXT</h2>
         <div class="line"></div>
       </div>
-      <div id="search-wrap" class="search-wrap">
-        <span class="search-icon">🔍</span>
-        <input
-          id="search-input"
-          class="search-input"
-          type="text"
-          placeholder="Search for a song or artist..."
-          enterkeyhint="search"
-          autocomplete="off"
-          autocorrect="off"
-          spellcheck="false"
-        >
-        <div id="search-results" class="search-results"></div>
-      </div>
-    </div>
-
-    <!-- Disposable camera -->
-    <div id="camera-card" class="card camera-card hidden">
-      <div class="section-header">
-        <h2>DISPOSABLE CAMERA</h2>
-        <div class="line"></div>
-      </div>
-      <div class="camera-card-body">
-        <div class="camera-counter" aria-label="Shots left">
-          <span id="camera-shots-left">0</span>
-          <small>SHOTS LEFT</small>
-        </div>
-        <div style="flex:1;min-width:0">
-          <p id="camera-status" class="camera-status"></p>
-          <button id="camera-open-btn" class="btn btn-primary" type="button">📸 OPEN CAMERA</button>
-        </div>
-      </div>
+      <div id="queue-list" class="queue-list"></div>
     </div>
 
     <!-- Costume contest (shown once the host opens it) -->
@@ -218,15 +227,6 @@
         <p id="costume-my-result" class="costume-label"></p>
         <div id="costume-results" class="costume-grid"></div>
       </div>
-    </div>
-
-    <!-- Up Next queue -->
-    <div class="card">
-      <div class="section-header">
-        <h2>UP NEXT</h2>
-        <div class="line"></div>
-      </div>
-      <div id="queue-list" class="queue-list"></div>
     </div>
 
     <!-- Hall of Shame -->

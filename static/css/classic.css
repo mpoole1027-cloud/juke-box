@@ -1407,3 +1407,9 @@ input[type="range"]::-webkit-slider-thumb {
 .tv-lb-val { color: var(--accent); }
 
 .tv-queue-upvote { background: rgba(212,175,55,0.15); }
+
+.queue-upvote-btn.maxed { border-color: var(--accent); }
+.queue-max-boost {
+  background: rgba(212,175,55,0.18);
+  font-family: Georgia, serif;
+}

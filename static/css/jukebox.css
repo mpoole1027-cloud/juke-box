@@ -1308,6 +1308,22 @@ input[type="range"]::-webkit-slider-thumb {
 
 .queue-upvote-btn:disabled { cursor: default; }
 
+/* The song has climbed as far as upvotes can move it; more votes still count. */
+.queue-upvote-btn.maxed { border-color: var(--olive); }
+
+.queue-max-boost {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(107,122,63,0.14);
+  color: var(--olive);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
 .queue-remove-btn {
   display: inline-flex;
   align-items: center;

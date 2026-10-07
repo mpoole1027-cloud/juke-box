@@ -315,6 +315,7 @@ const Camera = (() => {
       if (!cam) return;
       enabled = !!cam.enabled;
       serverShotsLeft = cam.shots_left;
+      document.querySelector('.camera-viewfinder').classList.toggle('filtered', !!cam.viewfinder_filter);
       render();
       if (pendingCount > 0 && !draining && !retryTimer) drain();
     },

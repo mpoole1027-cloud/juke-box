@@ -276,6 +276,7 @@ def _camera_state(user_id):
         'enabled': db.get_setting('camera_enabled', '1') == '1',
         'shots_total': total,
         'shots_left': max(0, total - used),
+        'viewfinder_filter': db.get_setting('camera_viewfinder_filter', '1') == '1',
     }
 
 
@@ -552,6 +553,7 @@ def api_status():
                 'is_mine': bool(user_id) and q['requested_by'] == user_id,
                 'nickname': q['nickname'],
                 'upvote_count': q['upvote_count'],
+                'skips_maxed': q['skips_maxed'],
                 'user_has_upvoted': q['id'] in my_upvotes,
                 'eta_ms': eta,
             }
@@ -671,15 +673,7 @@ def api_queue():
     queue_id = db.add_to_queue(track_id, track_name, artist, album_art, duration_ms, user_id)
 
     if sc.is_authenticated():
-        # The worker's snapshot, not a fresh Spotify call per queued song.
-        playback = qm.get_cached_playback()
-        if not playback or not playback.get('is_playing'):
-            device_id = qm.get_party_device_id()
-            ok, err = sc.play_track(f'spotify:track:{track_id}', device_id=device_id)
-            qm.note_play_result(ok, err, device_id)
-            if ok:
-                qm.invalidate_playback_cache()
-                db.update_queue_status(queue_id, 'playing')
+        qm.play_if_idle()
 
     return jsonify({'success': True, 'queue_id': queue_id})
 
@@ -865,12 +859,12 @@ def api_upload_photo():
     if not upload:
         return jsonify({'error': 'No photo attached'}), 400
     try:
-        jpeg, width, height = photos.process(upload.read())
+        jpeg, original, width, height = photos.process_shot(upload.read())
     except photos.PhotoError as e:
         return jsonify({'error': str(e), 'code': 'bad_photo'}), 400
 
     party_code = db.get_setting('party_code', '')
-    filename = photos.save(jpeg, party_code)
+    filename = photos.save_shot(jpeg, original, party_code)
     result, _ = db.add_photo(user_id, shot_id, party_code, filename, width, height,
                              limit=camera['shots_total'])
     if result != 'ok':
@@ -1017,6 +1011,7 @@ def api_tv():
             'album_art': q['album_art'],
             'nickname': q['nickname'],
             'upvote_count': q['upvote_count'],
+            'skips_maxed': q['skips_maxed'],
         }
         for q in pending_queue
     ]
@@ -1124,6 +1119,9 @@ def api_host_settings():
 
     if 'camera_enabled' in data:
         db.set_setting('camera_enabled', '1' if data['camera_enabled'] else '0')
+
+    if 'camera_viewfinder_filter' in data:
+        db.set_setting('camera_viewfinder_filter', '1' if data['camera_viewfinder_filter'] else '0')
 
     if 'camera_shots_per_guest' in data:
         try:
@@ -1277,15 +1275,7 @@ def api_host_queue():
     queue_id = db.add_to_queue(track_id, track_name, artist, album_art, duration_ms, 'host')
 
     if sc.is_authenticated():
-        # The worker's snapshot, not a fresh Spotify call per queued song.
-        playback = qm.get_cached_playback()
-        if not playback or not playback.get('is_playing'):
-            device_id = qm.get_party_device_id()
-            ok, err = sc.play_track(f'spotify:track:{track_id}', device_id=device_id)
-            qm.note_play_result(ok, err, device_id)
-            if ok:
-                qm.invalidate_playback_cache()
-                db.update_queue_status(queue_id, 'playing')
+        qm.play_if_idle()
 
     return jsonify({'success': True, 'queue_id': queue_id})
 
@@ -1303,6 +1293,7 @@ def api_host_camera():
     return jsonify({
         'enabled': db.get_setting('camera_enabled', '1') == '1',
         'shots_per_guest': int(db.get_setting('camera_shots_per_guest', '24')),
+        'viewfinder_filter': db.get_setting('camera_viewfinder_filter', '1') == '1',
         'current_party': db.get_setting('party_code', ''),
         'parties': db.photo_parties(),
     })
