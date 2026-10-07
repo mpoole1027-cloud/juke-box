@@ -1,4 +1,6 @@
 """The host-controlled Classic / Modern look toggle."""
+import re
+
 import pytest
 
 
@@ -48,9 +50,18 @@ def test_guests_cannot_change_theme(db, monkeypatch):
 def test_pages_render_with_the_saved_theme(client, path):
     html = client.get(path).get_data(as_text=True)
     assert 'data-theme="modern"' in html
-    assert 'classic.css" disabled>' in html
+    assert re.search(r'classic\.css\?v=\d+" disabled>', html)
 
     set_theme(client, 'classic')
     html = client.get(path).get_data(as_text=True)
     assert 'data-theme="classic"' in html
-    assert 'classic.css">' in html
+    assert re.search(r'classic\.css\?v=\d+">', html)
+
+
+@pytest.mark.parametrize('path', ['/', '/host', '/tv'])
+def test_static_urls_change_when_the_file_does(client, path):
+    """Cloudflare caches static files in browsers for hours; a stamped URL is
+    the only way a phone picks up new JS after a deploy."""
+    html = client.get(path).get_data(as_text=True)
+    assert re.search(r'/static/css/jukebox\.css\?v=\d+"', html)
+    assert not re.search(r'"/static/[^"?]+"', html)

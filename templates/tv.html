@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Party Jukebox — TV Display</title>
-  <link rel="stylesheet" href="/static/css/jukebox.css">
-  <link id="classic-css" rel="stylesheet" href="/static/css/classic.css"{% if ui_theme != 'classic' %} disabled{% endif %}>
-  <link rel="stylesheet" href="/static/css/costume.css">
+  <link rel="stylesheet" href="{{ asset('css/jukebox.css') }}">
+  <link id="classic-css" rel="stylesheet" href="{{ asset('css/classic.css') }}"{% if ui_theme != 'classic' %} disabled{% endif %}>
+  <link rel="stylesheet" href="{{ asset('css/costume.css') }}">
   <style>
     body {
       overflow: hidden;
@@ -168,6 +168,6 @@
   </div>
 </div>
 
-<script src="/static/js/tv.js"></script>
+<script src="{{ asset('js/tv.js') }}"></script>
 </body>
 </html>

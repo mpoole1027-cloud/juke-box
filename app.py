@@ -72,6 +72,19 @@ app.config.update(
     SESSION_COOKIE_SECURE=BEHIND_PROXY,
 )
 
+
+@app.template_global()
+def asset(filename):
+    """URL of a static file, stamped with its mtime. Cloudflare tells browsers
+    to cache static files for hours whatever we send, so without the stamp a
+    phone keeps old JS after a deploy and new buttons silently do nothing."""
+    try:
+        version = int(os.path.getmtime(os.path.join(app.static_folder, filename)))
+    except OSError:
+        version = 0
+    return url_for('static', filename=filename, v=version)
+
+
 # ---------------------------------------------------------------------------
 # Rate limiting
 # ---------------------------------------------------------------------------

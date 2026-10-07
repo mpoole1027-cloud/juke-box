@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Jukebox Host Panel</title>
-  <link rel="stylesheet" href="/static/css/jukebox.css">
-  <link id="classic-css" rel="stylesheet" href="/static/css/classic.css"{% if ui_theme != 'classic' %} disabled{% endif %}>
+  <link rel="stylesheet" href="{{ asset('css/jukebox.css') }}">
+  <link id="classic-css" rel="stylesheet" href="{{ asset('css/classic.css') }}"{% if ui_theme != 'classic' %} disabled{% endif %}>
 </head>
 <body>
 
@@ -337,6 +337,6 @@
   </div><!-- end host-layout -->
 </div><!-- end panel-view -->
 
-<script src="/static/js/host.js"></script>
+<script src="{{ asset('js/host.js') }}"></script>
 </body>
 </html>
