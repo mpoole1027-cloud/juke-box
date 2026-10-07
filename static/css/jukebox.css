@@ -1191,7 +1191,8 @@ input[type="range"]::-webkit-slider-thumb {
 .nickname-badge:hover { border-color: var(--olive); background: var(--card); }
 .nickname-badge.nickname-editing { cursor: default; padding: 4px 6px; }
 
-.nickname-text { white-space: nowrap; }
+.nickname-badge { min-width: 0; max-width: 55vw; }
+.nickname-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 
 .nickname-edit-hint {
   font-size: 0.7rem;

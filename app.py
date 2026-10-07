@@ -125,6 +125,10 @@ ANIMALS = [
 ]
 
 
+# Room for a first and last name, which the name gate asks for.
+NICKNAME_MAX = 32
+
+
 def generate_nickname():
     return f"{random.choice(ADJECTIVES)} {random.choice(ANIMALS)}"
 
@@ -559,6 +563,7 @@ def api_status():
             'nickname': user['nickname'],
             'is_banned': bool(user['is_banned']),
         } if user else None,
+        'name_required': not (user and user.get('name_set')),
         'settings': settings,
         'spotify_connected': sc.is_authenticated(),
         'playback_issue': _guest_issue(),
@@ -634,6 +639,10 @@ def api_queue():
 
     if user['is_banned']:
         return jsonify({'error': 'You are banned from queuing songs.'}), 403
+
+    if not user.get('name_set'):
+        return jsonify({'error': 'Enter your name before queuing a song.',
+                        'code': 'name_required'}), 403
 
     if not sc.is_authenticated():
         return jsonify({'error': 'Spotify not connected'}), 503
@@ -758,7 +767,7 @@ def api_set_nickname():
     nickname = (data.get('nickname') or '').strip()
     if not nickname:
         return jsonify({'error': 'Nickname cannot be empty'}), 400
-    nickname = nickname[:24]
+    nickname = ' '.join(nickname.split())[:NICKNAME_MAX]
 
     db.set_user_nickname(user_id, nickname)
     return jsonify({'success': True, 'nickname': nickname})

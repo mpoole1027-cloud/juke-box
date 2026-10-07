@@ -11,11 +11,13 @@ def app_module(db, monkeypatch):
     return app_module
 
 
-def join(app_module):
-    """A browser that scanned tonight's QR code."""
+def join(app_module, name='Test Guest'):
+    """A browser that scanned tonight's QR code and entered a name."""
     c = app_module.app.test_client()
     c.get('/?p=' + app_module.db.get_setting('party_code'))
     c.get('/')
+    if name:
+        c.post('/api/user/nickname', json={'nickname': name})
     return c
 
 
@@ -73,6 +75,21 @@ def test_ban_sticks_to_the_browser(app_module, db):
     res = queue_song(c, 'y' * 22)
     assert res.status_code == 403
     assert 'banned' in res.get_json()['error']
+
+
+def test_new_guest_must_enter_a_name_before_queuing(app_module, db):
+    c = join(app_module, name=None)
+    assert c.get('/api/status').get_json()['name_required'] is True
+    res = queue_song(c)
+    assert res.status_code == 403
+    assert res.get_json()['code'] == 'name_required'
+    assert db.get_pending_queue() == []
+
+    c.post('/api/user/nickname', json={'nickname': '  Jane   Doe '})
+    status = c.get('/api/status').get_json()
+    assert status['name_required'] is False
+    assert status['user']['nickname'] == 'Jane Doe'
+    assert queue_song(c).status_code == 200
 
 
 def test_queue_shows_each_songs_wait(app_module, db, monkeypatch):

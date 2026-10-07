@@ -30,6 +30,7 @@ async function apiFetch(url, opts = {}) {
     // The party code expired (host started a new party): back to the join form.
     res.clone().json().then(d => {
       if (d && d.code === 'party_code_required') showJoinGate(true);
+      else if (d && d.code === 'name_required') showNameGate(true);
     }).catch(() => {});
   }
   return res;
@@ -303,7 +304,7 @@ function startNicknameEdit() {
   badge.classList.add('nickname-editing');
   badge.removeAttribute('title');
   badge.innerHTML =
-    `<input id="nickname-input" class="nickname-input" type="text" maxlength="24" ` +
+    `<input id="nickname-input" class="nickname-input" type="text" maxlength="32" ` +
     `value="${escHtml(currentNickname)}" aria-label="Your name">` +
     `<button id="nickname-save" class="nickname-save" title="Save name" type="button">✓</button>`;
 
@@ -338,7 +339,7 @@ function startNicknameEdit() {
 }
 
 async function saveNickname(rawValue) {
-  const value = (rawValue || '').trim().slice(0, 24);
+  const value = (rawValue || '').trim().slice(0, 32);
   isEditingNickname = false;
   if (!value || value === currentNickname) {
     renderNickname(null);
@@ -443,6 +444,7 @@ function showJoinGate(show) {
   if (show) {
     $('main-content').classList.add('hidden');
     $('ban-banner').classList.add('hidden');
+    $('name-gate').classList.add('hidden');
     $('spotify-warning').classList.add('hidden');
     $('playback-issue').classList.add('hidden');
     $('nickname-display').classList.add('hidden');
@@ -450,6 +452,57 @@ function showJoinGate(show) {
     $('nickname-display').classList.remove('hidden');
   }
 }
+
+// ----------------------------------------------------------------
+// Name gate: first visit asks for a real name before anything else
+// ----------------------------------------------------------------
+function showNameGate(show) {
+  const gate = $('name-gate');
+  const wasHidden = gate.classList.contains('hidden');
+  gate.classList.toggle('hidden', !show);
+  if (show) {
+    $('main-content').classList.add('hidden');
+    $('ban-banner').classList.add('hidden');
+    $('nickname-display').classList.add('hidden');
+    // Focus once when it appears, not on every poll.
+    if (wasHidden) $('name-input').focus();
+  }
+}
+
+$('name-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const input = $('name-input');
+  const name = input.value.trim().replace(/\s+/g, ' ');
+  if (!name) {
+    showToast('Please enter your name', 'error');
+    input.focus();
+    return;
+  }
+  const btn = e.submitter || $('name-form').querySelector('button');
+  btn.disabled = true;
+  try {
+    const res = await apiFetch('/api/user/nickname', {
+      method: 'POST',
+      body: JSON.stringify({ nickname: name }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      showToast(data.error || 'Could not save your name', 'error');
+      return;
+    }
+    currentNickname = data.nickname;
+    localStorage.setItem('jukebox_nickname', currentNickname);
+    // They just picked it, so skip the "tap your name to change it" tip.
+    localStorage.setItem('jukebox_name_hint_shown', '1');
+    showNameGate(false);
+    showToast(`Welcome, ${data.nickname}! 🎉`, 'success');
+    pollStatus();
+  } catch (err) {
+    showToast('Network error', 'error');
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 $('join-form').addEventListener('submit', async e => {
   e.preventDefault();
@@ -505,9 +558,14 @@ async function pollStatus() {
       return;
     }
     showJoinGate(false);
+    applyTheme(data.ui_theme);
+    if (data.name_required) {
+      showNameGate(true);
+      return;
+    }
+    showNameGate(false);
     state = data;
 
-    applyTheme(data.ui_theme);
     renderUserBanned(data.user);
     renderNickname(data.user);
     renderNowPlaying(

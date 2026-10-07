@@ -55,6 +55,15 @@ def _add_reaction_queue_id_column(conn):
         pass
 
 
+def _add_name_set_column(conn):
+    """Migration: add name_set to users if absent. 0 until the guest types a
+    name, so everyone (including guests from before this) is asked once."""
+    try:
+        conn.execute("ALTER TABLE users ADD COLUMN name_set INTEGER DEFAULT 0")
+    except Exception:
+        pass
+
+
 def init_db():
     with _db_lock:
         conn = get_connection()
@@ -155,6 +164,7 @@ def init_db():
             _add_dedication_column(conn)
             _add_reaction_queue_id_column(conn)
             _add_costume_photo_column(conn)
+            _add_name_set_column(conn)
 
             # Insert default settings if not present
             defaults = [
@@ -714,7 +724,7 @@ def set_user_nickname(user_id, nickname):
         conn = get_connection()
         try:
             conn.execute(
-                "UPDATE users SET nickname = ? WHERE user_id = ?",
+                "UPDATE users SET nickname = ?, name_set = 1 WHERE user_id = ?",
                 (nickname, user_id)
             )
             conn.commit()

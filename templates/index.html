@@ -60,6 +60,21 @@
     </form>
   </div>
 
+  <!-- Name gate (shown once, after joining, until the guest enters a name) -->
+  <div id="name-gate" class="card hidden" style="text-align:center">
+    <div class="section-header">
+      <h2>WHO'S QUEUING?</h2>
+      <div class="line"></div>
+    </div>
+    <p style="font-size:0.9rem;margin-bottom:12px">Enter your first and last name so everyone knows whose song is playing.</p>
+    <form id="name-form" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+      <input id="name-input" class="search-input" type="text" maxlength="32" autocomplete="name"
+        autocapitalize="words" spellcheck="false" enterkeyhint="go" placeholder="First and last name"
+        aria-label="Your first and last name" style="max-width:260px;padding-left:12px">
+      <button class="btn btn-cyan" type="submit">LET'S GO</button>
+    </form>
+  </div>
+
   <!-- Ban banner (shown only if user is banned) -->
   <div id="ban-banner" class="ban-banner hidden">
     <h2>🚫 SILENCED!</h2>
