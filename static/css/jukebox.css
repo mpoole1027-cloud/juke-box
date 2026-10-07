@@ -1308,6 +1308,22 @@ input[type="range"]::-webkit-slider-thumb {
 
 .queue-upvote-btn:disabled { cursor: default; }
 
+/* The song has climbed as far as upvotes can move it; more votes still count. */
+.queue-upvote-btn.maxed { border-color: var(--olive); }
+
+.queue-max-boost {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(107,122,63,0.14);
+  color: var(--olive);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
 .queue-remove-btn {
   display: inline-flex;
   align-items: center;
@@ -1673,3 +1689,28 @@ input[type="range"]::-webkit-slider-thumb {
   15%  { opacity: 1; transform: translate(calc(var(--tv-drift) * 0.25), -30px) scale(1.05); }
   100% { transform: translate(var(--tv-drift), -320px) scale(1.1); opacity: 0; }
 }
+
+/* Host panel look picker ------------------------------------------ */
+.theme-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+.theme-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px 7px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card-alt, var(--bg-card2));
+  color: var(--text-dim);
+  font: 600 0.78rem var(--font-ui, sans-serif);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.theme-chip:hover { color: var(--text); border-color: var(--border-dark); }
+.theme-chip[aria-checked="true"] { color: var(--text); border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary) inset; }
+.theme-chip-swatch { display: inline-flex; }
+.theme-chip-swatch i {
+  width: 14px; height: 14px; border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.25);
+  margin-left: -5px;
+}
+.theme-chip-swatch i:first-child { margin-left: 0; }

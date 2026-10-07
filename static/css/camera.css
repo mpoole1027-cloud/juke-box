@@ -81,12 +81,28 @@ body.camera-open { overflow: hidden; }
 /* Front camera: show it like a mirror, the way phones do. */
 .camera-viewfinder video.mirrored { transform: scaleX(-1); }
 
+/* A preview of the disposable look (the host can switch it off). Only the
+   screen is tinted: shots are grabbed raw and the server applies the real
+   filter. */
+.camera-viewfinder.filtered video {
+  filter: sepia(0.2) saturate(1.3) contrast(1.08) brightness(1.04) hue-rotate(-8deg);
+}
+
+.camera-viewfinder.filtered::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.5) 100%);
+  pointer-events: none;
+}
+
 .camera-flash {
   position: absolute;
   inset: 0;
   background: #fff;
   opacity: 0;
   pointer-events: none;
+  z-index: 1;
 }
 
 .camera-flash.firing { animation: camera-flash 0.45s ease-out; }

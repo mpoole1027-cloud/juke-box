@@ -1,0 +1,319 @@
+/* ================================================================
+   HW-LANTERN.CSS  –  Halloween: "Jack-o'-Lantern"
+
+   Everything is carved and lit from inside: warm candle glow
+   leaking through cut edges, low fog, a harvest moon behind bare
+   branches on the TV. Loaded after jukebox.css only when the host
+   picks this look; every rule is scoped to the theme.
+   ================================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&display=swap');
+
+html[data-theme="lantern"] {
+  --bg:           #120a06;
+  --bg-alt:       #2a1a10;
+  --card:         #1c120b;
+  --card-alt:     #2a1a10;
+  --primary:      #ff7a1a;
+  --primary-dark: #e2620a;
+  --olive:        #ffc14d;
+  --olive-dark:   #e6a52c;
+  --accent:       #ffc14d;
+  --text:         #fbe9d2;
+  --text-light:   #fbe9d2;
+  --text-dim:     #c9a888;
+  --text-muted:   #8a6f58;
+  --border:       rgba(255,138,40,0.16);
+  --border-dark:  rgba(255,138,40,0.32);
+  --warning:      #ffb347;
+  --danger:       #ff5a3c;
+  --success:      #a6c86b;
+  --shadow-soft:  0 10px 30px rgba(0,0,0,0.5);
+  --shadow-card:  0 14px 40px rgba(0,0,0,0.65);
+  --font-display: 'Bricolage Grotesque', sans-serif;
+  --font-ui:      'Inter', sans-serif;
+  --glow:         rgba(255,122,26,0.55);
+  --dusk:         #3b2a4d;
+  color-scheme: dark;
+}
+
+/* ── Night: dusk sky up top, ember floor, fog drifting along the bottom ── */
+html[data-theme="lantern"] body {
+  background:
+    radial-gradient(100% 45% at 50% 0%, rgba(59,42,77,0.65), transparent 75%),
+    radial-gradient(90% 40% at 50% 105%, rgba(255,110,20,0.16), transparent 70%),
+    var(--bg);
+  background-attachment: fixed;
+}
+html[data-theme="lantern"] body::before {
+  content: '';
+  position: fixed;
+  left: -20%; right: -20%; bottom: -6vh;
+  height: 38vh;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(40% 50% at 25% 70%, rgba(220,200,230,0.07), transparent 70%),
+    radial-gradient(45% 55% at 70% 80%, rgba(220,200,230,0.06), transparent 70%),
+    radial-gradient(30% 40% at 50% 95%, rgba(220,200,230,0.06), transparent 70%);
+  filter: blur(6px);
+}
+@media (prefers-reduced-motion: no-preference) {
+  html[data-theme="lantern"] body::before { animation: lantern-fog 22s ease-in-out infinite alternate; }
+}
+@keyframes lantern-fog {
+  from { transform: translateX(-6%); }
+  to   { transform: translateX(6%); }
+}
+@keyframes lantern-flicker {
+  0%, 100% { opacity: 1; }
+  20% { opacity: 0.86; }
+  23% { opacity: 1; }
+  57% { opacity: 0.9; }
+  61% { opacity: 0.97; }
+}
+
+/* ── Cards: hollowed out, glow leaking from the cut rim ── */
+html[data-theme="lantern"] .card,
+html[data-theme="lantern"] .ban-banner {
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(255,122,26,0.07), transparent 60%),
+    var(--card);
+  border: 1px solid var(--border-dark);
+  border-radius: 26px 22px 28px 20px / 22px 26px 20px 28px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,193,77,0.18),
+    inset 0 0 26px rgba(255,122,26,0.08),
+    var(--shadow-soft);
+}
+html[data-theme="lantern"] .search-card { z-index: 20; }
+
+/* ── Header: a carved pumpkin badge that flickers ── */
+html[data-theme="lantern"] .header-brand-icon {
+  font-size: 0;
+  width: 52px; height: 52px;
+  border: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E %3Cdefs%3E%3CradialGradient id='g' cx='50%25' cy='55%25' r='55%25'%3E%3Cstop offset='0' stop-color='%23ff9a2e'/%3E%3Cstop offset='1' stop-color='%23b84a0a'/%3E%3C/radialGradient%3E%3C/defs%3E %3Cpath d='M30 8 q2 -6 8 -6 l1 3 q-4 0 -5 4z' fill='%235b7a2a'/%3E %3Cellipse cx='20' cy='36' rx='15' ry='20' fill='url(%23g)'/%3E %3Cellipse cx='44' cy='36' rx='15' ry='20' fill='url(%23g)'/%3E %3Cellipse cx='32' cy='36' rx='14' ry='22' fill='url(%23g)'/%3E %3Cpath d='M32 15 v42' stroke='%238a3606' stroke-opacity='0.5' stroke-width='1.2'/%3E %3Cpath d='M14 30 l7 -8 l6 9z M37 31 l6 -9 l7 8z' fill='%232a0f02'/%3E %3Cpath d='M29 36 l3 -5 l3 5z' fill='%232a0f02'/%3E %3Cpath d='M14 42 q18 14 36 0 l-4 1 l-2 4 l-3 -3 l-3 4 l-3 -4 l-3 4 l-3 -4 l-3 3 l-2 -4z' fill='%232a0f02'/%3E %3C/svg%3E") center / 100% no-repeat;
+  filter: drop-shadow(0 0 12px rgba(255,122,26,0.55));
+}
+@media (prefers-reduced-motion: no-preference) {
+  html[data-theme="lantern"] .header-brand-icon { animation: lantern-flicker 3.2s infinite; }
+}
+html[data-theme="lantern"] .jukebox-header h1 {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 800;
+  font-size: 2rem;
+  letter-spacing: -0.02em;
+  color: var(--olive);
+  text-shadow: 0 0 6px rgba(255,193,77,0.6), 0 0 22px rgba(255,122,26,0.55);
+}
+html[data-theme="lantern"] .tagline { color: var(--text-dim); letter-spacing: 0.24em; }
+html[data-theme="lantern"] .nickname-badge {
+  background: rgba(0,0,0,0.3);
+  border-color: var(--border-dark);
+  color: var(--text);
+}
+
+/* ── Section headings: lit lettering over a carved, jagged rule ── */
+html[data-theme="lantern"] .section-header h2,
+html[data-theme="lantern"] .now-playing-label,
+html[data-theme="lantern"] .tv-queue-title,
+html[data-theme="lantern"] .tv-lb-title {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 800;
+  font-size: 0.95rem;
+  letter-spacing: 0.08em;
+  color: var(--primary);
+  text-shadow: 0 0 12px rgba(255,122,26,0.5);
+}
+html[data-theme="lantern"] .section-header .line {
+  height: 7px;
+  background: linear-gradient(90deg, var(--primary), rgba(255,122,26,0.1));
+  -webkit-mask: linear-gradient(135deg, #000 25%, transparent 25%) 0 0 / 10px 7px repeat-x,
+                linear-gradient(225deg, #000 25%, transparent 25%) 0 0 / 10px 7px repeat-x;
+          mask: linear-gradient(135deg, #000 25%, transparent 25%) 0 0 / 10px 7px repeat-x,
+                linear-gradient(225deg, #000 25%, transparent 25%) 0 0 / 10px 7px repeat-x;
+  opacity: 0.8;
+}
+
+/* ── Now playing: the record glows like a lit pumpkin ── */
+html[data-theme="lantern"] .now-playing-card {
+  background:
+    radial-gradient(60% 45% at 50% 30%, rgba(255,122,26,0.18), transparent 70%),
+    var(--card);
+}
+html[data-theme="lantern"] .vinyl-wrap { width: 92px; height: 92px; }
+html[data-theme="lantern"] .vinyl {
+  width: 92px; height: 92px;
+  filter: drop-shadow(0 0 18px rgba(255,122,26,0.65));
+}
+html[data-theme="lantern"] .album-art-small { width: 38px; height: 38px; top: calc(50% - 19px); left: calc(50% - 19px); }
+html[data-theme="lantern"] .vinyl circle:first-child { fill: #1a0d05; stroke: #ff8a28; }
+html[data-theme="lantern"] .vinyl circle:nth-child(n+2):nth-child(-n+6) { stroke: rgba(255,122,26,0.22); }
+html[data-theme="lantern"] .vinyl-label { fill: var(--primary); }
+html[data-theme="lantern"] .vinyl-label-ring { stroke: #ffd38a; }
+html[data-theme="lantern"] .vinyl-rim { stroke: rgba(255,193,77,0.4); }
+html[data-theme="lantern"] .vinyl-hole { fill: #ffe7b0; }
+html[data-theme="lantern"] .track-name,
+html[data-theme="lantern"] .queue-item-title,
+html[data-theme="lantern"] .search-result-title {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 700;
+}
+html[data-theme="lantern"] .track-name { font-size: 1.5rem; letter-spacing: -0.01em; }
+html[data-theme="lantern"] .queue-item-title,
+html[data-theme="lantern"] .search-result-title { font-size: 0.98rem; }
+html[data-theme="lantern"] .track-artist { color: var(--olive); }
+html[data-theme="lantern"] .progress-bar-wrap { height: 6px; background: rgba(0,0,0,0.45); box-shadow: inset 0 0 0 1px var(--border); }
+html[data-theme="lantern"] .progress-bar-fill {
+  background: linear-gradient(90deg, #b84a0a, var(--primary), #ffd38a);
+  box-shadow: 0 0 10px var(--glow);
+}
+
+/* ── Buttons: lit from within ── */
+html[data-theme="lantern"] .btn {
+  border-radius: 16px 20px 14px 22px / 20px 14px 22px 16px;
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 800;
+  font-size: 0.82rem;
+  letter-spacing: 0.06em;
+  background: rgba(0,0,0,0.35);
+  border-color: var(--border-dark);
+  color: var(--text);
+}
+html[data-theme="lantern"] .btn:hover:not(:disabled) { background: rgba(255,122,26,0.1); border-color: var(--primary); color: var(--olive); }
+html[data-theme="lantern"] .btn-primary,
+html[data-theme="lantern"] .btn-primary:hover:not(:disabled) {
+  background: radial-gradient(120% 140% at 50% 0%, #ffb35a, #ff7a1a 45%, #c9500a);
+  border-color: #ffb35a;
+  color: #2a0f02;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.4), 0 6px 26px rgba(255,122,26,0.45);
+}
+html[data-theme="lantern"] .btn-cyan,
+html[data-theme="lantern"] .btn-cyan:hover:not(:disabled) { background: var(--olive); border-color: var(--olive); color: #2a0f02; }
+html[data-theme="lantern"] .downvote-btn { color: var(--danger); border-color: rgba(255,90,60,0.35); background: rgba(255,90,60,0.06); }
+html[data-theme="lantern"] .downvote-btn:hover:not(:disabled) { background: rgba(255,90,60,0.14); border-color: var(--danger); color: var(--danger); }
+html[data-theme="lantern"] .vote-meter { background: rgba(0,0,0,0.35); border: 1px solid var(--border); }
+html[data-theme="lantern"] .vote-pip { background: #2f1f14; }
+html[data-theme="lantern"] .vote-pip.filled { background: var(--danger); box-shadow: 0 0 8px rgba(255,90,60,0.7); }
+
+html[data-theme="lantern"] .reaction-btn { background: rgba(0,0,0,0.35); border-color: var(--border-dark); color: var(--text); }
+html[data-theme="lantern"] .reaction-btn:hover { background: rgba(255,122,26,0.1); border-color: var(--primary); }
+html[data-theme="lantern"] .reaction-btn.hearted,
+html[data-theme="lantern"] .reaction-btn.hearted:hover { border-color: var(--primary); box-shadow: 0 0 18px rgba(255,122,26,0.4); }
+html[data-theme="lantern"] .reaction-btn.hearted .reaction-count { color: var(--primary); }
+
+/* ── Inputs ── */
+html[data-theme="lantern"] .search-input,
+html[data-theme="lantern"] .input-field {
+  background: rgba(0,0,0,0.4);
+  border-color: var(--border-dark);
+  color: var(--text);
+}
+html[data-theme="lantern"] .search-input:focus,
+html[data-theme="lantern"] .input-field:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(255,122,26,0.18), 0 0 24px rgba(255,122,26,0.22); }
+html[data-theme="lantern"] .search-results { background: #1e130b; border-color: var(--border-dark); }
+
+/* ── Up next ── */
+html[data-theme="lantern"] .queue-item {
+  background: rgba(0,0,0,0.28);
+  border-color: var(--border);
+  border-radius: 18px 14px 20px 16px;
+}
+html[data-theme="lantern"] .queue-position {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px; height: 26px;
+  min-width: 26px;
+  border-radius: 50% 50% 46% 46% / 56% 56% 44% 44%;
+  background: radial-gradient(circle at 50% 40%, #ff9a3c, #c9500a);
+  color: #2a0f02;
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 800;
+  box-shadow: 0 0 10px rgba(255,122,26,0.4);
+}
+html[data-theme="lantern"] .queue-upvote-btn { background: rgba(0,0,0,0.35); border-color: var(--border-dark); color: var(--text-dim); }
+html[data-theme="lantern"] .queue-upvote-btn.voted,
+html[data-theme="lantern"] .queue-max-boost { background: rgba(255,193,77,0.13); border-color: rgba(255,193,77,0.45); color: var(--olive); }
+html[data-theme="lantern"] .queue-remove-btn { background: rgba(0,0,0,0.35); }
+
+/* ── Toasts, misc ── */
+html[data-theme="lantern"] .toast { background: #ffb35a; color: #2a0f02; box-shadow: 0 0 30px rgba(255,122,26,0.45); }
+html[data-theme="lantern"] .spinner { border-color: rgba(255,122,26,0.2); border-top-color: var(--primary); }
+html[data-theme="lantern"] .camera-counter { border-radius: 14px; box-shadow: 0 0 18px rgba(255,122,26,0.25), inset 0 0 14px rgba(255,122,26,0.15); }
+html[data-theme="lantern"] .camera-counter span { text-shadow: 0 0 12px rgba(255,122,26,0.6); }
+html[data-theme="lantern"] .costume-badge { color: #2a0f02; }
+html[data-theme="lantern"] .badge-ok { background: rgba(166,200,107,0.12); border-color: rgba(166,200,107,0.35); }
+
+/* ================================================================
+   TV
+   ================================================================ */
+html[data-theme="lantern"] .tv-dash { background: transparent; }
+html[data-theme="lantern"] .tv-statbar { background: rgba(0,0,0,0.35); border-bottom: 1px solid var(--border); }
+html[data-theme="lantern"] .tv-stat {
+  background: rgba(0,0,0,0.3);
+  border-color: var(--border-dark);
+  border-radius: 26px 22px 28px 20px / 22px 26px 20px 28px;
+  box-shadow: inset 0 0 22px rgba(255,122,26,0.1);
+}
+html[data-theme="lantern"] .tv-stat-num {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 800;
+  color: var(--olive);
+  text-shadow: 0 0 8px rgba(255,193,77,0.6), 0 0 26px rgba(255,122,26,0.6);
+}
+html[data-theme="lantern"] .tv-stat-label { color: var(--text-dim); }
+
+/* Harvest moon behind bare branches */
+html[data-theme="lantern"] .tv-dash-now {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 600' preserveAspectRatio='xMidYMid slice'%3E %3Cg fill='none' stroke='%23050302' stroke-linecap='round'%3E %3Cpath d='M-20 120 C80 130 150 110 230 70 S330 10 380 -10' stroke-width='14'/%3E %3Cpath d='M90 124 C120 160 170 170 210 200' stroke-width='7'/%3E %3Cpath d='M170 100 C190 60 230 40 250 10' stroke-width='6'/%3E %3Cpath d='M200 190 C215 215 240 222 262 240' stroke-width='3.5'/%3E %3Cpath d='M300 40 C320 60 350 66 380 64' stroke-width='4'/%3E %3Cpath d='M820 470 C720 450 680 470 610 520 S540 590 520 640' stroke-width='16'/%3E %3Cpath d='M700 460 C690 420 700 390 730 360' stroke-width='7'/%3E %3Cpath d='M640 500 C600 490 570 470 550 440' stroke-width='5'/%3E %3Cpath d='M730 360 C745 340 770 330 790 330' stroke-width='3'/%3E %3C/g%3E %3C/svg%3E") center / cover no-repeat,
+    radial-gradient(circle at 50% 36%, rgba(255,214,150,0.9) 0 168px, rgba(255,160,60,0.32) 171px, rgba(255,122,26,0.1) 280px, transparent 440px),
+    radial-gradient(120% 70% at 50% 100%, rgba(255,110,20,0.15), transparent 70%);
+}
+html[data-theme="lantern"] .tv-wordmark {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  color: var(--olive);
+  opacity: 0.85;
+}
+html[data-theme="lantern"] .tv-vinyl { filter: drop-shadow(0 0 40px rgba(255,122,26,0.7)); }
+@media (prefers-reduced-motion: no-preference) {
+  html[data-theme="lantern"] .tv-vinyl-wrap { animation: lantern-flicker 3.6s infinite; }
+}
+html[data-theme="lantern"] .tv-track-name,
+html[data-theme="lantern"] .tv-no-track-title {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 800;
+  font-size: 3.4rem;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  text-shadow: 0 2px 0 #000, 0 0 30px rgba(255,122,26,0.5);
+}
+html[data-theme="lantern"] .tv-artist { color: var(--olive); text-shadow: 0 1px 0 #000; }
+html[data-theme="lantern"] .tv-progress-track { background: rgba(0,0,0,0.5); }
+html[data-theme="lantern"] .tv-progress-fill { background: linear-gradient(90deg, #b84a0a, var(--primary), #ffd38a); box-shadow: 0 0 14px var(--glow); }
+html[data-theme="lantern"] .tv-time { color: var(--text-dim); }
+html[data-theme="lantern"] .tv-dash-next { background: rgba(0,0,0,0.32); border-left: 1px solid var(--border); }
+html[data-theme="lantern"] .tv-queue-item { border-bottom-color: var(--border); }
+html[data-theme="lantern"] .tv-queue-track { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 1.1rem; }
+html[data-theme="lantern"] .tv-queue-num { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; color: var(--primary); text-shadow: 0 0 10px var(--glow); }
+html[data-theme="lantern"] .tv-queue-item img { border-radius: 14px; }
+html[data-theme="lantern"] .tv-queue-upvote { background: rgba(255,193,77,0.13); color: var(--olive); }
+html[data-theme="lantern"] .tv-dash-boards { background: transparent; border-left: 1px solid var(--border); }
+html[data-theme="lantern"] .tv-lb {
+  background: rgba(0,0,0,0.3);
+  border-color: var(--border-dark);
+  border-radius: 22px 18px 24px 16px;
+  box-shadow: inset 0 0 22px rgba(255,122,26,0.08);
+}
+html[data-theme="lantern"] .tv-ticker { background: rgba(0,0,0,0.55); border-top: 1px solid var(--border-dark); }
+html[data-theme="lantern"] .tv-ticker-inner { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 1.05rem; color: var(--primary); text-shadow: 0 0 10px var(--glow); }
+html[data-theme="lantern"] .tv-costume-banner {
+  color: #2a0f02;
+  background: radial-gradient(120% 140% at 50% 0%, #ffb35a, #ff7a1a 45%, #c9500a);
+  box-shadow: 0 0 40px rgba(255,122,26,0.5);
+}

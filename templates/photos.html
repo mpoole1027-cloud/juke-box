@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Photo Review</title>
   <link rel="stylesheet" href="{{ asset('css/jukebox.css') }}">
-  <link id="classic-css" rel="stylesheet" href="{{ asset('css/classic.css') }}"{% if ui_theme != 'classic' %} disabled{% endif %}>
+{% include '_theme_links.html' %}
   <link rel="stylesheet" href="{{ asset('css/photos.css') }}">
 </head>
 <body>

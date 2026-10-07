@@ -22,3 +22,6 @@ exports/
 
 # macOS
 .DS_Store
+
+# Live-DB backups hold guest data
+*.bak-*

@@ -17,12 +17,14 @@ function escHtml(str) {
 // ----------------------------------------------------------------
 function applyTheme(theme) {
   if (!theme || document.documentElement.dataset.theme === theme) return;
-  const classic = theme === 'classic';
   document.documentElement.dataset.theme = theme;
-  const link = document.getElementById('classic-css');
-  if (link) link.disabled = !classic;
+  let color = null;
+  document.querySelectorAll('link[data-theme-css]').forEach(link => {
+    link.disabled = link.dataset.themeCss !== theme;
+    if (!link.disabled) color = link.dataset.themeColor;
+  });
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.content = classic ? '#1a0c08' : '#f5efe1';
+  if (meta) meta.content = color || meta.dataset.default;
 }
 
 // ----------------------------------------------------------------
@@ -163,7 +165,7 @@ function renderQueue(queue) {
       ? `<img src="${escHtml(item.album_art)}" alt="art">`
       : `<div class="tv-queue-art-fallback">🎵</div>`;
     const upvote = (item.upvote_count > 0)
-      ? `<span class="tv-queue-upvote">👍 ${item.upvote_count}</span>`
+      ? `<span class="tv-queue-upvote">👍 ${item.upvote_count}${item.skips_maxed ? ' · ⏫ max' : ''}</span>`
       : '';
     const requester = item.nickname
       ? `<span class="tv-queue-added">added by ${escHtml(item.nickname)}</span>`

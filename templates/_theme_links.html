@@ -1,0 +1,4 @@
+{#- One stylesheet per non-modern look; only the active one is enabled. -#}
+{% for name, t in ui_themes.items() if t.css %}
+  <link rel="stylesheet" href="{{ asset(t.css) }}" data-theme-css="{{ name }}" data-theme-color="{{ t.color }}"{% if ui_theme != name %} disabled{% endif %}>
+{% endfor %}

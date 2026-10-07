@@ -276,6 +276,7 @@ def _camera_state(user_id):
         'enabled': db.get_setting('camera_enabled', '1') == '1',
         'shots_total': total,
         'shots_left': max(0, total - used),
+        'viewfinder_filter': db.get_setting('camera_viewfinder_filter', '1') == '1',
     }
 
 
@@ -358,12 +359,31 @@ def _guest_issue():
     return {'code': issue['code'], 'message': issue['guest_message']} if issue else None
 
 
-UI_THEMES = ('modern', 'classic')
+# Host-selectable looks. Each non-modern theme is an extra stylesheet loaded
+# after jukebox.css; every page links them all (disabled) so switching is
+# instant. color is the phone browser's theme-color for that look.
+UI_THEMES = {
+    'modern':  {'label': 'Modern',          'css': None,                 'color': '#f5efe1',
+                'swatch': ('#f5efe1', '#c1573a', '#6b7a3f')},
+    'classic': {'label': 'Classic diner',   'css': 'css/classic.css',    'color': '#1a0c08',
+                'swatch': ('#2d1510', '#c41e3a', '#d4af37')},
+    'seance':  {'label': 'Séance',          'css': 'css/hw-seance.css',  'color': '#0e0a12',
+                'swatch': ('#0e0a12', '#e9b65a', '#7d4a8c')},
+    'rental':  {'label': 'Midnight Rental', 'css': 'css/hw-rental.css',  'color': '#07060a',
+                'swatch': ('#07060a', '#ff2e63', '#b8ff3a')},
+    'lantern': {'label': "Jack-o'-Lantern", 'css': 'css/hw-lantern.css', 'color': '#120a06',
+                'swatch': ('#120a06', '#ff7a1a', '#3b2a4d')},
+}
 
 
 def _ui_theme():
     theme = db.get_setting('ui_theme', 'modern')
     return theme if theme in UI_THEMES else 'modern'
+
+
+@app.context_processor
+def _theme_context():
+    return {'ui_themes': UI_THEMES}
 
 
 @app.before_request
@@ -552,6 +572,7 @@ def api_status():
                 'is_mine': bool(user_id) and q['requested_by'] == user_id,
                 'nickname': q['nickname'],
                 'upvote_count': q['upvote_count'],
+                'skips_maxed': q['skips_maxed'],
                 'user_has_upvoted': q['id'] in my_upvotes,
                 'eta_ms': eta,
             }
@@ -671,15 +692,7 @@ def api_queue():
     queue_id = db.add_to_queue(track_id, track_name, artist, album_art, duration_ms, user_id)
 
     if sc.is_authenticated():
-        # The worker's snapshot, not a fresh Spotify call per queued song.
-        playback = qm.get_cached_playback()
-        if not playback or not playback.get('is_playing'):
-            device_id = qm.get_party_device_id()
-            ok, err = sc.play_track(f'spotify:track:{track_id}', device_id=device_id)
-            qm.note_play_result(ok, err, device_id)
-            if ok:
-                qm.invalidate_playback_cache()
-                db.update_queue_status(queue_id, 'playing')
+        qm.play_if_idle()
 
     return jsonify({'success': True, 'queue_id': queue_id})
 
@@ -865,12 +878,12 @@ def api_upload_photo():
     if not upload:
         return jsonify({'error': 'No photo attached'}), 400
     try:
-        jpeg, width, height = photos.process(upload.read())
+        jpeg, original, width, height = photos.process_shot(upload.read())
     except photos.PhotoError as e:
         return jsonify({'error': str(e), 'code': 'bad_photo'}), 400
 
     party_code = db.get_setting('party_code', '')
-    filename = photos.save(jpeg, party_code)
+    filename = photos.save_shot(jpeg, original, party_code)
     result, _ = db.add_photo(user_id, shot_id, party_code, filename, width, height,
                              limit=camera['shots_total'])
     if result != 'ok':
@@ -1017,6 +1030,7 @@ def api_tv():
             'album_art': q['album_art'],
             'nickname': q['nickname'],
             'upvote_count': q['upvote_count'],
+            'skips_maxed': q['skips_maxed'],
         }
         for q in pending_queue
     ]
@@ -1076,8 +1090,8 @@ def api_host_settings():
     data = request.get_json() or {}
 
     if 'ui_theme' in data:
-        if data['ui_theme'] not in UI_THEMES:
-            return jsonify({'error': 'Theme must be "modern" or "classic".'}), 400
+        if not isinstance(data['ui_theme'], str) or data['ui_theme'] not in UI_THEMES:
+            return jsonify({'error': 'Unknown theme: ' + ', '.join(UI_THEMES) + '.'}), 400
         db.set_setting('ui_theme', data['ui_theme'])
 
     if 'downvote_threshold' in data:
@@ -1124,6 +1138,9 @@ def api_host_settings():
 
     if 'camera_enabled' in data:
         db.set_setting('camera_enabled', '1' if data['camera_enabled'] else '0')
+
+    if 'camera_viewfinder_filter' in data:
+        db.set_setting('camera_viewfinder_filter', '1' if data['camera_viewfinder_filter'] else '0')
 
     if 'camera_shots_per_guest' in data:
         try:
@@ -1277,15 +1294,7 @@ def api_host_queue():
     queue_id = db.add_to_queue(track_id, track_name, artist, album_art, duration_ms, 'host')
 
     if sc.is_authenticated():
-        # The worker's snapshot, not a fresh Spotify call per queued song.
-        playback = qm.get_cached_playback()
-        if not playback or not playback.get('is_playing'):
-            device_id = qm.get_party_device_id()
-            ok, err = sc.play_track(f'spotify:track:{track_id}', device_id=device_id)
-            qm.note_play_result(ok, err, device_id)
-            if ok:
-                qm.invalidate_playback_cache()
-                db.update_queue_status(queue_id, 'playing')
+        qm.play_if_idle()
 
     return jsonify({'success': True, 'queue_id': queue_id})
 
@@ -1303,6 +1312,7 @@ def api_host_camera():
     return jsonify({
         'enabled': db.get_setting('camera_enabled', '1') == '1',
         'shots_per_guest': int(db.get_setting('camera_shots_per_guest', '24')),
+        'viewfinder_filter': db.get_setting('camera_viewfinder_filter', '1') == '1',
         'current_party': db.get_setting('party_code', ''),
         'parties': db.photo_parties(),
     })

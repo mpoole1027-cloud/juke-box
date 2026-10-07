@@ -1,0 +1,370 @@
+/* ================================================================
+   HW-RENTAL.CSS  –  Halloween: "Midnight Rental"
+
+   The horror aisle of a 1987 video store, played back on a worn
+   tape: scanlines, a tracking band, VCR on-screen display type and
+   neon poster titles. Loaded after jukebox.css only when the host
+   picks this look; every rule is scoped to the theme.
+   ================================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Anton&family=VT323&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+html[data-theme="rental"] {
+  --bg:           #07060a;
+  --bg-alt:       #17141f;
+  --card:         #0f0d15;
+  --card-alt:     #1b1724;
+  --primary:      #ff2e63;
+  --primary-dark: #d81b4d;
+  --olive:        #b8ff3a;
+  --olive-dark:   #93d61f;
+  --accent:       #2de2e6;
+  --text:         #f3eeff;
+  --text-light:   #f3eeff;
+  --text-dim:     #a59fbd;
+  --text-muted:   #6c6684;
+  --border:       rgba(243,238,255,0.10);
+  --border-dark:  rgba(243,238,255,0.22);
+  --warning:      #ffb000;
+  --danger:       #ff2e63;
+  --success:      #b8ff3a;
+  --shadow-soft:  none;
+  --shadow-card:  0 10px 40px rgba(0,0,0,0.7);
+  --font-display: 'Anton', Impact, sans-serif;
+  --font-ui:      'Space Grotesk', sans-serif;
+  --osd:          'VT323', ui-monospace, monospace;
+  color-scheme: dark;
+}
+
+html[data-theme="rental"] body {
+  font-family: 'Space Grotesk', sans-serif;
+  background:
+    radial-gradient(90% 50% at 50% 0%, rgba(255,46,99,0.10), transparent 70%),
+    radial-gradient(70% 40% at 50% 100%, rgba(45,226,230,0.07), transparent 70%),
+    var(--bg);
+  background-attachment: fixed;
+}
+
+/* ── The tape: scanlines everywhere, a tracking band that drifts down ── */
+html[data-theme="rental"] body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9998;
+  background:
+    repeating-linear-gradient(0deg, rgba(0,0,0,0.22) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.5) 100%);
+}
+html[data-theme="rental"]::after {
+  content: '';
+  position: fixed;
+  left: 0; right: 0;
+  top: -20vh;
+  height: 14vh;
+  pointer-events: none;
+  z-index: 9997;
+  background: linear-gradient(180deg, transparent, rgba(243,238,255,0.035) 40%, rgba(243,238,255,0.06) 50%, rgba(243,238,255,0.035) 60%, transparent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  html[data-theme="rental"]::after { animation: rental-tracking 9s linear infinite; }
+}
+@keyframes rental-tracking {
+  from { transform: translateY(0); }
+  to   { transform: translateY(140vh); }
+}
+
+/* ── Cards: hard-edged boxes with a VHS label stripe ── */
+html[data-theme="rental"] .card,
+html[data-theme="rental"] .ban-banner {
+  background: var(--card);
+  border: 1px solid var(--border-dark);
+  border-radius: 2px;
+  box-shadow: 6px 6px 0 rgba(255,46,99,0.16);
+  padding-top: 26px;
+  overflow: visible;
+}
+html[data-theme="rental"] .card::before {
+  content: '';
+  position: absolute;
+  left: -1px; right: -1px; top: -1px;
+  height: 6px;
+  background: linear-gradient(90deg, var(--primary) 0 34%, #ffb000 34% 52%, var(--olive) 52% 70%, var(--accent) 70% 100%);
+}
+html[data-theme="rental"] .search-card { z-index: 20; }
+
+/* ── Header: REC light and a poster title ── */
+html[data-theme="rental"] .header-brand-icon {
+  font-size: 0;
+  border-radius: 2px;
+  background: #000;
+  border: 1px solid var(--border-dark);
+  width: 52px;
+}
+html[data-theme="rental"] .header-brand-icon::after {
+  content: '● REC';
+  font: 1.15rem/1 var(--osd);
+  color: var(--primary);
+  text-shadow: 0 0 8px rgba(255,46,99,0.8);
+}
+@media (prefers-reduced-motion: no-preference) {
+  html[data-theme="rental"] .header-brand-icon::after { animation: rental-blink 1.4s steps(1) infinite 0.7s; }
+}
+@keyframes rental-blink { 50% { opacity: 0.25; } }
+html[data-theme="rental"] .jukebox-header h1 {
+  font-family: 'Anton', Impact, sans-serif;
+  font-weight: 400;
+  font-size: 2.1rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text);
+  transform: skewX(-8deg);
+  text-shadow: -2px 0 rgba(45,226,230,0.85), 2px 0 rgba(255,46,99,0.85);
+}
+html[data-theme="rental"] .tagline {
+  font: 1.05rem/1 var(--osd);
+  letter-spacing: 0.08em;
+  color: var(--olive);
+}
+html[data-theme="rental"] .nickname-badge {
+  border-radius: 2px;
+  background: #000;
+  border-color: var(--border-dark);
+  font-family: var(--osd);
+  font-size: 1.05rem;
+  font-weight: 400;
+  color: var(--text);
+}
+
+/* ── Section headings: VCR on-screen display ── */
+html[data-theme="rental"] .section-header h2,
+html[data-theme="rental"] .now-playing-label,
+html[data-theme="rental"] .tv-queue-title,
+html[data-theme="rental"] .tv-lb-title {
+  font-family: var(--osd);
+  font-weight: 400;
+  font-size: 1.25rem;
+  letter-spacing: 0.08em;
+  color: var(--olive);
+  text-shadow: 0 0 6px rgba(184,255,58,0.55);
+}
+html[data-theme="rental"] .section-header .line {
+  height: 2px;
+  background: repeating-linear-gradient(90deg, var(--border-dark) 0 6px, transparent 6px 10px);
+}
+html[data-theme="rental"] .now-playing-label { color: var(--text); text-shadow: 0 0 6px rgba(243,238,255,0.5); }
+@media (prefers-reduced-motion: no-preference) {
+  html[data-theme="rental"] .now-playing-label { animation: rental-blink 2s steps(1) infinite; }
+}
+
+/* ── Now playing: tape reel, chromatic title ── */
+html[data-theme="rental"] .vinyl-wrap { filter: drop-shadow(0 0 16px rgba(255,46,99,0.35)); }
+html[data-theme="rental"] .vinyl circle:first-child { fill: #000; stroke: var(--primary); }
+html[data-theme="rental"] .vinyl-label { fill: var(--primary); }
+html[data-theme="rental"] .vinyl-label-ring { stroke: #000; }
+html[data-theme="rental"] .vinyl-rim { stroke: rgba(255,46,99,0.5); }
+html[data-theme="rental"] .vinyl-hole { fill: #000; }
+html[data-theme="rental"] .track-name {
+  font-family: 'Anton', Impact, sans-serif;
+  font-weight: 400;
+  font-size: 1.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 1.05;
+  text-shadow: -2px 0 rgba(45,226,230,0.7), 2px 0 rgba(255,46,99,0.7);
+}
+html[data-theme="rental"] .track-artist {
+  font: 1.15rem/1 var(--osd);
+  color: var(--accent);
+  letter-spacing: 0.04em;
+}
+html[data-theme="rental"] .progress-bar-wrap { height: 10px; border-radius: 0; background: #000; border: 1px solid var(--border-dark); }
+html[data-theme="rental"] .progress-bar-fill {
+  border-radius: 0;
+  background: repeating-linear-gradient(90deg, var(--olive) 0 6px, transparent 6px 8px);
+  box-shadow: 0 0 8px rgba(184,255,58,0.5);
+}
+
+/* ── Buttons: chunky blocks with an offset shadow ── */
+html[data-theme="rental"] .btn {
+  border-radius: 2px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: #000;
+  border: 1px solid var(--border-dark);
+  color: var(--text);
+  box-shadow: 3px 3px 0 var(--border-dark);
+}
+html[data-theme="rental"] .btn:hover:not(:disabled) { background: #000; color: var(--olive); border-color: var(--olive); }
+html[data-theme="rental"] .btn:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: none; }
+html[data-theme="rental"] .btn-primary,
+html[data-theme="rental"] .btn-primary:hover:not(:disabled) {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #000;
+  box-shadow: 4px 4px 0 var(--accent);
+}
+html[data-theme="rental"] .btn-cyan,
+html[data-theme="rental"] .btn-cyan:hover:not(:disabled) { background: var(--olive); border-color: var(--olive); color: #000; box-shadow: 4px 4px 0 var(--primary); }
+html[data-theme="rental"] .downvote-btn {
+  font-family: var(--osd);
+  font-size: 1.35rem;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  color: var(--primary);
+  border-color: rgba(255,46,99,0.5);
+  box-shadow: 4px 4px 0 rgba(255,46,99,0.25);
+}
+html[data-theme="rental"] .downvote-btn:hover:not(:disabled) { color: #000; background: var(--primary); }
+html[data-theme="rental"] .vote-meter { background: #000; border: 1px solid var(--border-dark); border-radius: 2px; }
+html[data-theme="rental"] .vote-meter span { font: 1.05rem/1 var(--osd); color: var(--primary); }
+html[data-theme="rental"] .vote-pip { border-radius: 0; width: 14px; height: 10px; background: var(--bg-alt); }
+html[data-theme="rental"] .vote-pip.filled { background: var(--primary); box-shadow: 0 0 8px rgba(255,46,99,0.8); }
+
+html[data-theme="rental"] .reaction-btn { background: #000; border-radius: 2px; border-color: var(--border-dark); color: var(--text); box-shadow: 3px 3px 0 var(--border-dark); }
+html[data-theme="rental"] .reaction-btn:hover { border-color: var(--primary); }
+html[data-theme="rental"] .reaction-count { font: 1.3rem/1 var(--osd); color: var(--text); }
+html[data-theme="rental"] .reaction-btn.hearted,
+html[data-theme="rental"] .reaction-btn.hearted:hover { border-color: var(--primary); box-shadow: 3px 3px 0 var(--primary); }
+html[data-theme="rental"] .reaction-btn.hearted .reaction-count { color: var(--primary); }
+
+/* ── Inputs: a blinking-cursor terminal ── */
+html[data-theme="rental"] .search-input,
+html[data-theme="rental"] .input-field {
+  background: #000;
+  border: 1px solid var(--border-dark);
+  border-radius: 2px;
+  color: var(--olive);
+  font-family: var(--osd);
+  font-size: 1.3rem;
+  padding-top: 9px;
+  padding-bottom: 9px;
+  caret-color: var(--olive);
+}
+html[data-theme="rental"] .search-input::placeholder { color: var(--text-muted); }
+html[data-theme="rental"] .search-input:focus,
+html[data-theme="rental"] .input-field:focus { border-color: var(--olive); box-shadow: 0 0 0 1px var(--olive), 0 0 18px rgba(184,255,58,0.25); }
+html[data-theme="rental"] .search-icon { filter: grayscale(1) brightness(1.6); }
+html[data-theme="rental"] .search-results { border-radius: 2px; background: #0b0a10; border-color: var(--border-dark); }
+html[data-theme="rental"] .search-result-item img,
+html[data-theme="rental"] .queue-item img { border-radius: 0; }
+
+/* ── Up next: rental tape spines ── */
+html[data-theme="rental"] .queue-list { gap: 6px; }
+html[data-theme="rental"] .queue-item {
+  background: linear-gradient(90deg, #000 0 44px, var(--card-alt) 44px);
+  border: 1px solid var(--border-dark);
+  border-left: 4px solid var(--primary);
+  border-radius: 0;
+  padding: 8px 10px 8px 0;
+}
+html[data-theme="rental"] .queue-item:nth-child(4n+2) { border-left-color: var(--accent); }
+html[data-theme="rental"] .queue-item:nth-child(4n+3) { border-left-color: var(--olive); }
+html[data-theme="rental"] .queue-item:nth-child(4n+4) { border-left-color: #ffb000; }
+html[data-theme="rental"] .queue-position {
+  width: 44px;
+  min-width: 44px;
+  text-align: center;
+  align-self: center;
+  font: 1.7rem/1 var(--osd);
+  color: var(--text);
+}
+html[data-theme="rental"] .queue-item-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+html[data-theme="rental"] .queue-requester { font-family: var(--osd); font-size: 0.95rem; color: var(--text-dim); }
+html[data-theme="rental"] .queue-upvote-btn { background: #000; border-radius: 2px; border-color: var(--border-dark); color: var(--text-dim); }
+html[data-theme="rental"] .queue-upvote-btn.voted,
+html[data-theme="rental"] .queue-max-boost { background: rgba(184,255,58,0.12); border-color: rgba(184,255,58,0.5); color: var(--olive); border-radius: 2px; }
+html[data-theme="rental"] .queue-remove-btn { background: #000; border-radius: 2px; }
+
+/* "Be kind, rewind" sticker on the Up Next heading */
+html[data-theme="rental"] .card:has(#queue-list) .section-header::after {
+  content: 'BE KIND · REWIND';
+  font: 0.95rem/1 var(--osd);
+  color: #000;
+  background: #ffb000;
+  padding: 4px 8px 3px;
+  transform: rotate(3deg);
+  white-space: nowrap;
+}
+
+/* ── Toasts, misc ── */
+html[data-theme="rental"] .toast { background: #000; color: var(--olive); border: 1px solid var(--olive); border-radius: 2px; font: 1.25rem/1.1 var(--osd); }
+html[data-theme="rental"] .spinner { border-color: rgba(184,255,58,0.2); border-top-color: var(--olive); }
+html[data-theme="rental"] .camera-counter { border-radius: 2px; background: #000; }
+html[data-theme="rental"] .camera-counter span { font-family: var(--osd); font-weight: 400; font-size: 2.4rem; color: var(--primary); text-shadow: 0 0 10px rgba(255,46,99,0.7); }
+html[data-theme="rental"] .camera-counter small { font-family: var(--osd); font-size: 0.85rem; }
+html[data-theme="rental"] .costume-badge { color: #000; border-radius: 0; }
+html[data-theme="rental"] .costume-tile-name { font-family: 'Anton', Impact, sans-serif; font-weight: 400; text-transform: uppercase; letter-spacing: 0.02em; }
+html[data-theme="rental"] .badge-ok { background: rgba(184,255,58,0.1); border-color: rgba(184,255,58,0.35); }
+html[data-theme="rental"] .toggle-switch { border-radius: 2px; }
+
+/* ================================================================
+   TV
+   ================================================================ */
+html[data-theme="rental"] .tv-dash { background: transparent; }
+html[data-theme="rental"] .tv-statbar { background: #000; border-bottom: 1px solid var(--border-dark); }
+html[data-theme="rental"] .tv-stat { background: #050407; border: 1px solid var(--border-dark); border-radius: 2px; box-shadow: none; }
+html[data-theme="rental"] .tv-stat-num {
+  font: 3.6rem/0.9 var(--osd);
+  color: var(--olive);
+  text-shadow: 0 0 14px rgba(184,255,58,0.6);
+}
+html[data-theme="rental"] .tv-stat-label { font: 1.15rem/1 var(--osd); letter-spacing: 0.12em; color: var(--text-dim); }
+html[data-theme="rental"] .tv-dash-now {
+  background: radial-gradient(60% 60% at 50% 45%, rgba(255,46,99,0.12), transparent 70%);
+}
+html[data-theme="rental"] .tv-wordmark {
+  font: 1.8rem/1 var(--osd);
+  letter-spacing: 0.08em;
+  color: var(--text);
+  opacity: 0.9;
+}
+html[data-theme="rental"] .tv-wordmark::before { content: '● REC  '; color: var(--primary); text-shadow: 0 0 10px rgba(255,46,99,0.8); }
+html[data-theme="rental"] .tv-dash-now::after {
+  content: 'PLAY ▶';
+  position: absolute;
+  top: 18px; right: 26px;
+  font: 1.8rem/1 var(--osd);
+  color: var(--text);
+  letter-spacing: 0.08em;
+}
+html[data-theme="rental"] .tv-vinyl { filter: drop-shadow(0 0 30px rgba(255,46,99,0.45)); }
+html[data-theme="rental"] .tv-track-name,
+html[data-theme="rental"] .tv-no-track-title {
+  font-family: 'Anton', Impact, sans-serif;
+  font-weight: 400;
+  font-size: 4.2rem;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  color: var(--text);
+  max-width: 820px;
+  text-shadow: -4px 0 rgba(45,226,230,0.75), 4px 0 rgba(255,46,99,0.75);
+}
+html[data-theme="rental"] .tv-artist { font: 2rem/1 var(--osd); letter-spacing: 0.06em; color: var(--accent); text-transform: uppercase; }
+html[data-theme="rental"] .tv-progress-track { height: 14px; border-radius: 0; background: #000; border: 1px solid var(--border-dark); }
+html[data-theme="rental"] .tv-progress-fill { border-radius: 0; background: repeating-linear-gradient(90deg, var(--olive) 0 8px, transparent 8px 11px); }
+html[data-theme="rental"] .tv-time { font: 1.4rem/1 var(--osd); color: var(--olive); }
+html[data-theme="rental"] .tv-requester { font: 1.4rem/1 var(--osd); }
+html[data-theme="rental"] .tv-reaction-count { font: 2rem/1 var(--osd); }
+html[data-theme="rental"] .tv-dash-next { background: #0a0910; border-left: 1px solid var(--border-dark); }
+html[data-theme="rental"] .tv-queue-item { border-bottom: 1px dashed var(--border-dark); }
+html[data-theme="rental"] .tv-queue-num { font: 2rem/1 var(--osd); color: var(--primary); }
+html[data-theme="rental"] .tv-queue-track { font-family: 'Space Grotesk', sans-serif; font-weight: 700; text-transform: uppercase; font-size: 1rem; }
+html[data-theme="rental"] .tv-queue-added { font: 1rem/1 var(--osd); }
+html[data-theme="rental"] .tv-queue-item img { border-radius: 0; }
+html[data-theme="rental"] .tv-queue-upvote { background: rgba(184,255,58,0.12); color: var(--olive); border-radius: 0; }
+html[data-theme="rental"] .tv-dash-boards { background: transparent; border-left: 1px solid var(--border-dark); }
+html[data-theme="rental"] .tv-lb { background: #0a0910; border-radius: 2px; border-color: var(--border-dark); box-shadow: 5px 5px 0 rgba(255,46,99,0.16); }
+html[data-theme="rental"] .tv-lb-val { font: 1.4rem/1 var(--osd); }
+html[data-theme="rental"] .tv-ticker { background: var(--primary); border-top: none; }
+html[data-theme="rental"] .tv-ticker-inner { font-family: 'Anton', Impact, sans-serif; font-weight: 400; font-size: 1.3rem; letter-spacing: 0.1em; color: #000; }
+html[data-theme="rental"] .tv-costume-banner { border-radius: 0; color: #000; box-shadow: 6px 6px 0 var(--accent); }
+html[data-theme="rental"] .tv-costume-banner-title { font-family: 'Anton', Impact, sans-serif; font-weight: 400; text-transform: uppercase; }

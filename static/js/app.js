@@ -7,12 +7,14 @@
 // ----------------------------------------------------------------
 function applyTheme(theme) {
   if (!theme || document.documentElement.dataset.theme === theme) return;
-  const classic = theme === 'classic';
   document.documentElement.dataset.theme = theme;
-  const link = document.getElementById('classic-css');
-  if (link) link.disabled = !classic;
+  let color = null;
+  document.querySelectorAll('link[data-theme-css]').forEach(link => {
+    link.disabled = link.dataset.themeCss !== theme;
+    if (!link.disabled) color = link.dataset.themeColor;
+  });
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.content = classic ? '#1a0c08' : '#f5efe1';
+  if (meta) meta.content = color || meta.dataset.default;
 }
 
 // ----------------------------------------------------------------
@@ -156,6 +158,7 @@ function renderQueue(queue) {
     const isMine = !!item.is_mine;
     const voted = !!item.user_has_upvoted;
     const count = item.upvote_count || 0;
+    const maxed = !!item.skips_maxed;
     const nickname = item.nickname || 'someone';
     return `
     <div class="queue-item">
@@ -168,12 +171,13 @@ function renderQueue(queue) {
         <div class="queue-item-title">${escHtml(item.track_name)}</div>
         <div class="queue-item-artist">${escHtml(item.artist)}</div>
         <div class="queue-requester">added by ${escHtml(nickname)}</div>
+        ${maxed ? `<div class="queue-max-boost" title="Upvotes have moved this song up as far as it can go. You can still upvote it.">⏫ Max boost</div>` : ''}
         ${isMine ? `<div class="queue-requester">${etaText(item.eta_ms)}</div>` : ''}
       </div>
       <div class="queue-actions">
-        <button class="queue-upvote-btn${voted ? ' voted' : ''}"
+        <button class="queue-upvote-btn${voted ? ' voted' : ''}${maxed ? ' maxed' : ''}"
           data-queue-id="${escHtml(item.id)}"${voted ? ' disabled' : ''}
-          title="Upvote this song" type="button">
+          title="${maxed ? 'Upvote this song (it has already moved up the max spots)' : 'Upvote this song'}" type="button">
           👍 <span class="queue-upvote-count">${count}</span>
         </button>
         ${isMine

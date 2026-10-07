@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Party Jukebox — TV Display</title>
   <link rel="stylesheet" href="{{ asset('css/jukebox.css') }}">
-  <link id="classic-css" rel="stylesheet" href="{{ asset('css/classic.css') }}"{% if ui_theme != 'classic' %} disabled{% endif %}>
+{% include '_theme_links.html' %}
   <link rel="stylesheet" href="{{ asset('css/costume.css') }}">
   <style>
     body {
@@ -24,7 +24,7 @@
       letter-spacing: 2px;
       z-index: 10000;
     }
-    [data-theme="classic"] body::after { color: rgba(255,255,255,0.15); }
+    html:not([data-theme="modern"]) body::after { color: rgba(255,255,255,0.15); }
   </style>
 </head>
 <body>

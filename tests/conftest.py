@@ -117,6 +117,7 @@ def _reset_rate_limits():
         if qm_mod is not None:
             qm_mod._snapshot = None
             qm_mod._playback_issue = None
+            qm_mod._last_play_started = 0.0
     reset()
     yield
     reset()

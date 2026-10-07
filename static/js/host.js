@@ -17,12 +17,14 @@ function escHtml(str) {
 // ----------------------------------------------------------------
 function applyTheme(theme) {
   if (!theme || document.documentElement.dataset.theme === theme) return;
-  const classic = theme === 'classic';
   document.documentElement.dataset.theme = theme;
-  const link = document.getElementById('classic-css');
-  if (link) link.disabled = !classic;
+  let color = null;
+  document.querySelectorAll('link[data-theme-css]').forEach(link => {
+    link.disabled = link.dataset.themeCss !== theme;
+    if (!link.disabled) color = link.dataset.themeColor;
+  });
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.content = classic ? '#1a0c08' : '#f5efe1';
+  if (meta) meta.content = color || meta.dataset.default;
 }
 
 function showToast(msg, type = '') {
@@ -95,7 +97,7 @@ async function loadStatus() {
     renderManageQueue(data.queue);
     renderSettings(data.settings);
     applyTheme(data.ui_theme);
-    $('classic-toggle').checked = data.ui_theme === 'classic';
+    markThemePick(data.ui_theme);
   } catch (e) {}
 }
 
@@ -265,7 +267,7 @@ function renderManageQueue(queue) {
         <div class="manage-queue-title">${escHtml(item.track_name)}</div>
         <div class="manage-queue-artist">${escHtml(item.artist)}</div>
         <div style="font-size:0.68rem;color:var(--text-muted);margin-top:2px">
-          added by ${escHtml(item.nickname || '—')}${item.upvote_count > 0 ? ` · 👍 ${item.upvote_count}` : ''}
+          added by ${escHtml(item.nickname || '—')}${item.upvote_count > 0 ? ` · 👍 ${item.upvote_count}` : ''}${item.skips_maxed ? ' · ⏫ max boost' : ''}
         </div>
       </div>
     </div>
@@ -438,17 +440,25 @@ $('demo-toggle').addEventListener('change', async e => {
 // ----------------------------------------------------------------
 // Appearance
 // ----------------------------------------------------------------
-$('classic-toggle').addEventListener('change', async e => {
-  const theme = e.target.checked ? 'classic' : 'modern';
+function markThemePick(theme) {
+  document.querySelectorAll('[data-theme-pick]').forEach(btn => {
+    btn.setAttribute('aria-checked', btn.dataset.themePick === theme ? 'true' : 'false');
+  });
+}
+
+$('theme-picker')?.addEventListener('click', async e => {
+  const btn = e.target.closest('[data-theme-pick]');
+  if (!btn || btn.getAttribute('aria-checked') === 'true') return;
+  const theme = btn.dataset.themePick;
   const res = await hostFetch('/api/host/settings', {
     method: 'POST',
     body: JSON.stringify({ ui_theme: theme }),
   });
   if (res.ok) {
     applyTheme(theme);
-    showToast(theme === 'classic' ? 'Classic look on' : 'Modern look on', 'success');
+    markThemePick(theme);
+    showToast(`${btn.textContent.trim()} look on`, 'success');
   } else {
-    e.target.checked = !e.target.checked;
     showToast('Failed to change the look', 'error');
   }
 });
@@ -631,6 +641,7 @@ async function loadCamera() {
     if (!res.ok) return;
     const cam = await res.json();
     $('camera-toggle').checked = cam.enabled;
+    $('camera-filter-toggle').checked = cam.viewfinder_filter;
     const slider = $('camera-shots-slider');
     if (slider.dataset.loaded !== 'true') {
       slider.value = cam.shots_per_guest;
@@ -658,6 +669,11 @@ async function saveCamera(body, okMsg) {
 $('camera-toggle').addEventListener('change', e => {
   saveCamera({ camera_enabled: e.target.checked },
              e.target.checked ? 'Camera on' : 'Camera off');
+});
+
+$('camera-filter-toggle').addEventListener('change', e => {
+  saveCamera({ camera_viewfinder_filter: e.target.checked },
+             e.target.checked ? 'Viewfinder filter on' : 'Viewfinder filter off');
 });
 
 $('camera-shots-slider').addEventListener('input', e => {

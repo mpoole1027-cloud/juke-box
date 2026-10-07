@@ -113,6 +113,7 @@ It serves with waitress on port 5001 by default, as **one process**: the queue m
 - Search for a song and tap **Queue It**
 - Downvote the current song with the big red button — 7 downvotes (configurable) skips it
 - React to the current song with 🔥 or ❤️
+- Upvote a queued song 👍 — each upvote moves it up one spot, up to 3 spots. After that it shows **⏫ Max boost** and guests can still upvote it, but it won't move any further
 - Each person can have at most 2 songs in the queue at once
 - The same song can't be queued twice in one night
 

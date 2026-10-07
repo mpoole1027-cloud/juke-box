@@ -387,11 +387,40 @@ def get_pending_queue():
                 "LEFT JOIN (SELECT queue_id, COUNT(*) AS upvote_count FROM upvotes GROUP BY queue_id) uc "
                 "ON uc.queue_id = q.id "
                 "WHERE q.status = 'pending' "
-                "ORDER BY upvote_count DESC, q.sort_order ASC, q.id ASC"
+                "ORDER BY q.sort_order ASC, q.id ASC"
             ).fetchall()
-            return [dict(r) for r in rows]
+            return _apply_upvote_skips([dict(r) for r in rows])
         finally:
             conn.close()
+
+
+# Each upvote moves a song up one spot, but only this many in total, so a
+# popular request can't leapfrog the whole queue. Guests can keep upvoting
+# past the cap; the extra votes just don't move it any further.
+MAX_UPVOTE_SKIPS = 3
+
+
+def _apply_upvote_skips(items):
+    """Reorder a queue (given in added/host order) by moving each song, front
+    to back, up min(upvotes, MAX_UPVOTE_SKIPS) spots. A song stops early
+    behind one with at least as many upvotes, so the more-liked song wins a
+    contested spot and an earlier request keeps it on a tie. No song moves
+    up more than MAX_UPVOTE_SKIPS places.
+
+    Applying the moves in turn, rather than sorting on added position minus
+    skips, matters when two songs are upvoted: a song pushed back by one
+    upvoted song mustn't then block another upvoted song behind it."""
+    out = []
+    for item in items:
+        votes = item['upvote_count']
+        item['skips_maxed'] = votes >= MAX_UPVOTE_SKIPS
+        pos = len(out)
+        for _ in range(min(votes, MAX_UPVOTE_SKIPS)):
+            if pos == 0 or out[pos - 1]['upvote_count'] >= votes:
+                break
+            pos -= 1
+        out.insert(pos, item)
+    return out
 
 
 def get_playing_item():
@@ -427,9 +456,18 @@ def add_to_queue(spotify_track_id, track_name, artist, album_art, duration_ms, r
 
 
 def update_queue_status(queue_id, status):
+    """Only one song can be playing. Starting one puts any other row still
+    marked 'playing' back in the queue: Spotify was told to play something
+    else, so that song got cut off (or never started) and its guest should
+    still hear it."""
     with _db_lock:
         conn = get_connection()
         try:
+            if status == 'playing':
+                conn.execute(
+                    "UPDATE queue SET status = 'pending' WHERE status = 'playing' AND id != ?",
+                    (queue_id,)
+                )
             conn.execute(
                 "UPDATE queue SET status = ? WHERE id = ?", (status, queue_id)
             )

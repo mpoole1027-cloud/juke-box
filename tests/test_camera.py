@@ -53,7 +53,8 @@ def shoot(client, shot_id='shot-0001', data=None):
 def test_shot_is_stored_and_counted(app_module, db):
     c = guest_client(app_module)
     before = c.get('/api/status').get_json()['camera']
-    assert before == {'enabled': True, 'shots_total': 24, 'shots_left': 24}
+    assert before == {'enabled': True, 'shots_total': 24, 'shots_left': 24,
+                      'viewfinder_filter': True}
 
     res = shoot(c)
     assert res.status_code == 200 and res.get_json()['shots_left'] == 23
@@ -101,6 +102,29 @@ def test_metadata_is_stripped_and_size_capped(app_module, db):
     with Image.open(photos.path_for(db.list_photos()[0]['filename'])) as img:
         assert max(img.size) == photos.MAX_EDGE
         assert not img.getexif()
+
+
+def test_shot_gets_the_disposable_look_and_keeps_its_original(app_module, db):
+    import photos
+    from PIL import ImageChops
+    c = guest_client(app_module)
+    assert shoot(c, data=jpeg(exif_gps=True)).status_code == 200
+    filename = db.list_photos()[0]['filename']
+    with Image.open(photos.path_for(filename)) as print_, \
+         Image.open(photos.path_for(photos.original_for(filename))) as original:
+        assert print_.size == original.size == (640, 480)
+        assert not print_.getexif() and not original.getexif()
+        assert ImageChops.difference(print_.convert('RGB'), original.convert('RGB')).getbbox()
+
+
+def test_deleting_a_shot_removes_its_original(app_module, db):
+    import photos
+    c = guest_client(app_module)
+    shoot(c)
+    filename = db.list_photos()[0]['filename']
+    photos.delete(filename)
+    assert not os.path.exists(photos.path_for(filename))
+    assert not os.path.exists(photos.path_for(photos.original_for(filename)))
 
 
 def test_garbage_is_rejected(app_module, db):
@@ -172,6 +196,15 @@ def test_host_camera_settings(app_module, db):
                                                'camera_shots_per_guest': 10}).status_code == 200
     cam = h.get('/api/host/camera').get_json()
     assert cam['enabled'] is False and cam['shots_per_guest'] == 10
+    assert cam['viewfinder_filter'] is True
+
+
+def test_viewfinder_filter_toggle_reaches_guests(app_module, db):
+    h = host_client(app_module)
+    assert h.post('/api/host/settings', json={'camera_viewfinder_filter': False}).status_code == 200
+    assert h.get('/api/host/camera').get_json()['viewfinder_filter'] is False
+    c = guest_client(app_module)
+    assert c.get('/api/status').get_json()['camera']['viewfinder_filter'] is False
 
 
 def test_oversized_upload_is_refused(app_module):
