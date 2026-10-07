@@ -47,6 +47,21 @@ def _add_reaction_queue_id_column(conn):
         pass
 
 
+def _one_heart_per_song(conn):
+    """Migration: reactions are hearts only, one per guest per song. Folds old
+    fire reactions into hearts, drops the extra taps from before the limit,
+    and enforces it with a unique index."""
+    conn.execute("UPDATE reactions SET reaction = 'heart' WHERE reaction != 'heart'")
+    conn.execute(
+        "DELETE FROM reactions WHERE queue_id IS NOT NULL AND id NOT IN ("
+        "SELECT MIN(id) FROM reactions WHERE queue_id IS NOT NULL GROUP BY user_id, queue_id)"
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_reactions_user_song "
+        "ON reactions(user_id, queue_id)"
+    )
+
+
 def _add_name_set_column(conn):
     """Migration: add name_set to users if absent. 0 until the guest types a
     name, so everyone (including guests from before this) is asked once."""
@@ -154,6 +169,7 @@ def init_db():
 
             _add_sort_order_column(conn)
             _add_reaction_queue_id_column(conn)
+            _one_heart_per_song(conn)
             _add_costume_photo_column(conn)
             _add_name_set_column(conn)
 
@@ -582,15 +598,30 @@ def get_user_upvoted_ids(user_id):
             conn.close()
 
 
-def add_reaction(user_id, reaction, queue_id=None):
+def add_reaction(user_id, reaction, queue_id):
+    """Record a guest's heart on a song. Returns False if they already hearted it."""
     with _db_lock:
         conn = get_connection()
         try:
-            conn.execute(
-                "INSERT INTO reactions (user_id, reaction, queue_id) VALUES (?, ?, ?)",
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO reactions (user_id, reaction, queue_id) VALUES (?, ?, ?)",
                 (user_id, reaction, queue_id)
             )
             conn.commit()
+            return cur.rowcount == 1
+        finally:
+            conn.close()
+
+
+def user_has_reacted(queue_id, user_id):
+    with _db_lock:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT 1 FROM reactions WHERE queue_id = ? AND user_id = ?",
+                (queue_id, user_id)
+            ).fetchone()
+            return row is not None
         finally:
             conn.close()
 
@@ -608,9 +639,10 @@ def get_reaction_counts(queue_id=None):
                 rows = conn.execute(
                     "SELECT reaction, COUNT(*) as cnt FROM reactions GROUP BY reaction"
                 ).fetchall()
-            counts = {'fire': 0, 'heart': 0}
+            counts = {'heart': 0}
             for r in rows:
-                counts[r['reaction']] = r['cnt']
+                if r['reaction'] in counts:
+                    counts[r['reaction']] = r['cnt']
             return counts
         finally:
             conn.close()

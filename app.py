@@ -507,10 +507,12 @@ def api_status():
 
     downvote_count = 0
     user_has_downvoted = False
+    user_has_reacted = False
     if current_queue_id:
         downvote_count = db.get_downvote_count(current_queue_id)
         if user_id:
             user_has_downvoted = db.user_has_downvoted(current_queue_id, user_id)
+            user_has_reacted = db.user_has_reacted(current_queue_id, user_id)
 
     pending_queue = db.get_pending_queue()
     my_upvotes = db.get_user_upvoted_ids(user_id) if user_id else set()
@@ -556,6 +558,7 @@ def api_status():
             for q, eta in zip(pending_queue, etas)
         ],
         'reactions': reactions,
+        'user_has_reacted': user_has_reacted,
         'banned_users': [{'nickname': u['nickname']} for u in banned_users],
         'user': {
             'nickname': user['nickname'],
@@ -738,14 +741,22 @@ def api_react():
 
     data = request.get_json() or {}
     reaction = data.get('reaction', '')
-    if reaction not in ('fire', 'heart'):
-        return jsonify({'error': 'Invalid reaction. Use fire or heart.'}), 400
+    if reaction != 'heart':
+        return jsonify({'error': 'Invalid reaction. Use heart.'}), 400
 
     playing_item = db.get_playing_item()
-    current_queue_id = playing_item['id'] if playing_item else None
-    db.add_reaction(user_id, reaction, current_queue_id)
-    counts = db.get_reaction_counts(current_queue_id) if current_queue_id else db.get_reaction_counts()
-    return jsonify({'success': True, 'reactions': counts})
+    if not playing_item:
+        return jsonify({'error': 'Nothing is playing right now'}), 409
+    current_queue_id = playing_item['id']
+    # One heart per guest per song; repeat taps don't count.
+    if not db.add_reaction(user_id, reaction, current_queue_id):
+        return jsonify({
+            'error': 'You already hearted this song',
+            'user_has_reacted': True,
+            'reactions': db.get_reaction_counts(current_queue_id),
+        }), 409
+    counts = db.get_reaction_counts(current_queue_id)
+    return jsonify({'success': True, 'user_has_reacted': True, 'reactions': counts})
 
 
 @app.route('/api/user/nickname', methods=['POST'])
