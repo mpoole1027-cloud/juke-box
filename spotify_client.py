@@ -84,9 +84,14 @@ def _make_session():
     # One shared session so calls reuse connections. Same retries as spotipy's
     # default, minus 429.
     session = _SpotifySession()
+    # respect_retry_after_header=False matters: urllib3 otherwise retries ANY
+    # 429/503 that carries Retry-After, forcelist or not, sleeping through it
+    # inside the call. One such sleep holding queue_manager's _fetch_lock hung
+    # every request thread on 2026-10-07.
     retry = Retry(total=3, connect=None, read=False, status=3, backoff_factor=0.3,
                   allowed_methods=frozenset(['GET', 'POST', 'PUT', 'DELETE']),
-                  status_forcelist=(500, 502, 503, 504))
+                  status_forcelist=(500, 502, 503, 504),
+                  respect_retry_after_header=False)
     adapter = requests.adapters.HTTPAdapter(max_retries=retry, pool_maxsize=20)
     session.mount('https://', adapter)
     return session

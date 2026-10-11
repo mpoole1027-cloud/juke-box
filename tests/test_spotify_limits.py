@@ -93,6 +93,43 @@ def test_shared_session_does_not_retry_429():
     assert 429 not in adapter.max_retries.status_forcelist
 
 
+@pytest.mark.parametrize('status', [429, 503])
+def test_real_adapter_never_sleeps_through_retry_after(status, monkeypatch):
+    """urllib3 retries any 429/503 carrying Retry-After unless told not to,
+    whatever status_forcelist says. Sleeping it out inside a call that holds
+    queue_manager's _fetch_lock hung every request thread. Drive the real
+    adapter against a local server to prove it returns at once."""
+    import http.server
+    import threading
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(status)
+            self.send_header('Retry-After', '30')
+            self.send_header('Content-Length', '2')
+            self.end_headers()
+            self.wfile.write(b'{}')
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    monkeypatch.setattr(sc, '_retry_until', 0.0)
+    session = sc._make_session()
+    session.mount('http://', session.get_adapter('https://api.spotify.com'))
+    try:
+        start = time.monotonic()
+        try:
+            res = session.get(f'http://127.0.0.1:{server.server_port}/v1/me/player', timeout=5)
+            assert res.status_code == status
+        except requests.exceptions.RetryError:
+            assert status == 503     # a few quick backoff retries, then give up
+        assert time.monotonic() - start < 5
+    finally:
+        server.shutdown()
+
+
 def test_playback_state_reports_rate_limit(monkeypatch):
     monkeypatch.setattr(sc, 'get_spotify', lambda: sc._client_for('token'))
     monkeypatch.setattr(sc, '_retry_until', time.monotonic() + 60)
