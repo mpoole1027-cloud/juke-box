@@ -111,6 +111,10 @@ that happened in one check goes out as one message.
 - `touch logs/watchdog.mute` silences Discord while you work on the code
   (restarting a service on purpose alerts too). `rm logs/watchdog.mute` turns
   it back on. Alerts still go to `logs/watchdog.log` while muted.
+- `PARTY_ALERTS_MODE=test` in `.env` quiets Discord while you're testing:
+  only new critical problems, no mentions, no 15-minute reminders, and
+  "back to normal" only for problems that lasted 5+ minutes. Set it to `live`
+  (or remove it) before the party. The log still records everything.
 
 ## After the party: share the photos
 

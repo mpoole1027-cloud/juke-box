@@ -12,6 +12,10 @@ Settings come from .env, re-read every poll so edits apply without a restart:
     PARTY_ALERTS_MENTION        Prefix for critical alerts (default @everyone; "" for none).
     PARTY_ALERTS_HEARTBEAT_URL  Optional healthchecks.io ping URL, hit every poll, so
                                 someone hears about it if this Mac goes silent.
+    PARTY_ALERTS_MODE           live (default) or test. Test sends only new critical
+                                problems, with no mention and no reminders, and a
+                                recovery note only for ones that lasted 5+ minutes.
+                                The log still gets everything.
 
 Mute alerts while working on the code with `touch logs/watchdog.mute`; delete
 the file to unmute. Read-only: it never restarts or changes anything.
@@ -39,6 +43,7 @@ POLL_SECONDS = 15
 PUBLIC_EVERY = 60          # the tunnel check goes out over the internet; less often
 REMIND_SECONDS = 15 * 60   # repeat a still-open critical alert this often
 EVENT_COOLDOWN = 10 * 60   # at most one alert per event kind this often
+TEST_RECOVERY_MIN = 5 * 60 # test mode: skip "back to normal" for shorter problems
 
 AGENTS = {
     'com.partyjukebox.app': 'Jukebox',
@@ -330,21 +335,24 @@ class Tracker:
         self.first_seen = {}   # key -> time it appeared
         self.announced = {}    # key -> (Problem, time last announced)
         self.event_last = {}   # event key -> time last announced
+        self.lasted = {}       # key -> seconds, for problems resolved by the last update
 
     def update(self, problems, now):
         current = {p.key: p for p in problems}
         new, reminders, resolved = [], [], []
+
+        self.lasted = {}
+        for key, (p, _) in list(self.announced.items()):
+            if key not in current:
+                resolved.append(p)
+                self.lasted[key] = now - self.first_seen.get(key, now)
+                del self.announced[key]
 
         for key in list(self.first_seen):
             if key not in current:
                 del self.first_seen[key]
         for key, p in current.items():
             self.first_seen.setdefault(key, now)
-
-        for key, (p, _) in list(self.announced.items()):
-            if key not in current:
-                resolved.append(p)
-                del self.announced[key]
 
         for key, p in current.items():
             if key in self.announced:
@@ -367,6 +375,15 @@ class Tracker:
                 self.event_last[key] = now
                 out.append(message)
         return out
+
+
+def for_testing(new, resolved, lasted):
+    """Test mode's cut: (new, reminders, resolved, events) with only new critical
+    problems, and recoveries of critical ones that lasted TEST_RECOVERY_MIN."""
+    new = [p for p in new if p.severity == CRITICAL]
+    resolved = [p for p in resolved if p.severity == CRITICAL
+                and lasted.get(p.key, 0) >= TEST_RECOVERY_MIN]
+    return new, [], resolved, []
 
 
 def compose(new, reminders, resolved, events, mention):
@@ -469,20 +486,28 @@ def run(once=False):
             return
 
         new, reminders, resolved = tracker.update(problems, now)
-        message = compose(new, reminders, resolved, tracker.events(events, now),
-                          env.get('PARTY_ALERTS_MENTION', '@everyone'))
+        events = tracker.events(events, now)
+        mention = env.get('PARTY_ALERTS_MENTION', '@everyone')
+        message = compose(new, reminders, resolved, events, mention)
+        testing = env.get('PARTY_ALERTS_MODE', '').strip().lower() == 'test'
+        outgoing = (compose(*for_testing(new, resolved, tracker.lasted), '')
+                    if testing else message)
         if not started:
             started = True
             names = ', '.join(AGENTS[label] for label, info in snap['agents'].items()
                               if info['installed'])
             hello = f'👀 Watchdog started, watching: {names or "nothing installed"}.'
+            if testing:
+                hello += ' Test mode: critical alerts only, no mentions.'
             message = hello + ('\n' + message if message else '')
+            outgoing = hello + ('\n' + outgoing if outgoing else '')
 
         webhook = env.get('PARTY_ALERTS_WEBHOOK', '').strip()
         if message:
-            log('ALERT ' + message.replace('\n', ' | '))
-            if webhook and not os.path.exists(MUTE_FILE):
-                unsent.append(message)
+            log('ALERT ' + ('(not sent, test mode) ' if not outgoing else '')
+                + message.replace('\n', ' | '))
+        if outgoing and webhook and not os.path.exists(MUTE_FILE):
+            unsent.append(outgoing)
         while unsent and webhook and post_discord(webhook, unsent[0]):
             unsent.pop(0)
         del unsent[:-20]  # don't hoard if Discord is down for hours

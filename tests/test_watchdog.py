@@ -141,6 +141,30 @@ def test_counter_events():
     }
 
 
+def test_tracker_records_how_long_resolved_problems_lasted():
+    t = wd.Tracker()
+    down = [wd.Problem('a', wd.CRITICAL, 'a', grace=0)]
+    t.update(down, 100)
+    t.update(down, 400)
+    t.update([], 460)
+    assert t.lasted == {'a': 360}
+    t.update([], 475)
+    assert t.lasted == {}
+
+
+def test_test_mode_sends_only_new_criticals_and_long_recoveries():
+    crit = wd.Problem('a', wd.CRITICAL, 'Jukebox down.')
+    blip = wd.Problem('b', wd.CRITICAL, 'Tunnel blip.')
+    warn = wd.Problem('c', wd.WARNING, 'On battery.')
+    new, reminders, resolved, events = wd.for_testing(
+        [crit, warn], [blip, crit, warn],
+        {'a': wd.TEST_RECOVERY_MIN, 'b': 60, 'c': 9999})
+    assert [p.key for p in new] == ['a']
+    assert reminders == [] and events == []
+    assert [p.key for p in resolved] == ['a']
+    assert wd.compose(new, reminders, [], events, '') == '🚨 Jukebox down.'
+
+
 def test_compose_mentions_only_for_critical():
     crit = wd.Problem('a', wd.CRITICAL, 'Jukebox down.')
     warn = wd.Problem('b', wd.WARNING, 'On battery.')
