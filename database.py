@@ -190,6 +190,7 @@ def init_db():
                     (key, value)
                 )
             _ensure_host_password_hash(cursor)
+            _ensure_photos_password_hash(cursor)
             cursor.execute(
                 "INSERT OR IGNORE INTO settings (key, value) VALUES ('party_code', ?)",
                 (generate_party_code(),))
@@ -257,6 +258,29 @@ def set_host_password(password):
 
 def host_password_is_placeholder():
     return any(check_host_password(pw) for pw in PLACEHOLDER_HOST_PASSWORDS)
+
+
+# A second, weaker role: trusted guests who review camera photos and nothing
+# else. No hash means reviewer login is off.
+def _ensure_photos_password_hash(cursor):
+    """PHOTOS_PASSWORD seeds the reviewer password once; the host panel owns it after."""
+    env_pw = os.environ.get('PHOTOS_PASSWORD', '').strip()
+    if env_pw:
+        cursor.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('photos_password_hash', ?)",
+            (generate_password_hash(env_pw),))
+
+
+def check_photos_password(password):
+    stored = get_setting('photos_password_hash')
+    return bool(stored and password) and check_password_hash(stored, password)
+
+
+def set_photos_password(password):
+    """Set the reviewer password and bump its version, which signs out every
+    reviewer logged in with the old one."""
+    set_setting('photos_password_hash', generate_password_hash(password))
+    set_setting('photos_pw_version', secrets.token_hex(4))
 
 
 def get_setting(key, default=None):
@@ -866,6 +890,74 @@ def get_leaderboards():
                 'top_djs': [dict(r) for r in top_djs],
                 'crowd_favorites': [dict(r) for r in crowd_favorites],
                 'most_skipped': [dict(r) for r in most_skipped],
+            }
+        finally:
+            conn.close()
+
+
+def host_stats(party_code, since, active_since):
+    """Numbers for the host's phone. Queue history and reactions outlive a
+    party, so they count from `since` (when this party started); photos and
+    the costume contest are already per party_code. `active_since` is the
+    cutoff for "active now": anyone who queued, reacted, shot or voted."""
+    with _db_lock:
+        conn = get_connection()
+        try:
+            def one(sql, *args):
+                return conn.execute(sql, args).fetchone()[0] or 0
+
+            def song(sql):
+                row = conn.execute(sql, (since,)).fetchone()
+                return dict(row) if row and row['votes'] else None
+
+            top = conn.execute(
+                "SELECT u.nickname, COUNT(*) AS n FROM queue q "
+                "JOIN users u ON u.user_id = q.requested_by "
+                "WHERE q.added_at >= ? AND q.requested_by != 'host' "
+                "GROUP BY q.requested_by ORDER BY n DESC, MIN(q.id) LIMIT 3",
+                (since,)).fetchall()
+            pending = conn.execute(
+                "SELECT COUNT(*), SUM(duration_ms) FROM queue WHERE status = 'pending'"
+            ).fetchone()
+            return {
+                'guests': one("SELECT COUNT(*) FROM users WHERE user_id != 'host' AND name_set = 1"),
+                'banned': one("SELECT COUNT(*) FROM users WHERE is_banned = 1"),
+                'active_now': one(
+                    "SELECT COUNT(DISTINCT uid) FROM ("
+                    " SELECT requested_by AS uid FROM queue WHERE added_at >= ?"
+                    " UNION SELECT user_id FROM reactions WHERE created_at >= ?"
+                    " UNION SELECT user_id FROM photos WHERE created_at >= ?"
+                    " UNION SELECT voter_id FROM costume_votes WHERE voted_at >= ?"
+                    ") WHERE uid != 'host'", *([active_since] * 4)),
+                'songs_played': one(
+                    "SELECT COUNT(*) FROM queue WHERE status = 'played' AND added_at >= ?", since),
+                'songs_skipped': one(
+                    "SELECT COUNT(*) FROM queue WHERE status = 'skipped' AND added_at >= ?", since),
+                'songs_requested': one("SELECT COUNT(*) FROM queue WHERE added_at >= ?", since),
+                'queue_depth': pending[0] or 0,
+                'queue_ms': pending[1] or 0,
+                'top_requesters': [dict(r) for r in top],
+                'most_upvoted': song(
+                    "SELECT q.track_name, q.artist, COUNT(v.id) AS votes FROM queue q "
+                    "JOIN upvotes v ON v.queue_id = q.id WHERE q.added_at >= ? "
+                    "GROUP BY q.id ORDER BY votes DESC, q.id LIMIT 1"),
+                'most_downvoted': song(
+                    "SELECT q.track_name, q.artist, COUNT(v.id) AS votes FROM queue q "
+                    "JOIN downvotes v ON v.queue_id = q.id WHERE q.added_at >= ? "
+                    "GROUP BY q.id ORDER BY votes DESC, q.id LIMIT 1"),
+                'most_hearted': song(
+                    "SELECT q.track_name, q.artist, COUNT(r.id) AS votes FROM queue q "
+                    "JOIN reactions r ON r.queue_id = q.id WHERE r.created_at >= ? "
+                    "GROUP BY q.id ORDER BY votes DESC, q.id LIMIT 1"),
+                'hearts': one("SELECT COUNT(*) FROM reactions WHERE created_at >= ?", since),
+                'photos': one("SELECT COUNT(*) FROM photos WHERE party_code = ?", party_code),
+                'photos_pending': one(
+                    "SELECT COUNT(*) FROM photos WHERE party_code = ? AND status = 'pending'",
+                    party_code),
+                'costume_entries': one(
+                    "SELECT COUNT(*) FROM costume_entries WHERE party_code = ?", party_code),
+                'costume_votes': one(
+                    "SELECT COUNT(*) FROM costume_votes WHERE party_code = ?", party_code),
             }
         finally:
             conn.close()

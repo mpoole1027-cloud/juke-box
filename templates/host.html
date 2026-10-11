@@ -44,6 +44,7 @@
     <div style="display:flex;gap:10px;align-items:center">
       <span style="color:var(--text-dim);font-size:0.78rem">Spotify: <span id="spotify-status">checking...</span></span>
       <a id="spotify-connect-btn" href="/auth/spotify" class="btn btn-primary btn-sm hidden">CONNECT SPOTIFY</a>
+      <a href="/host/m" class="btn btn-ghost btn-sm">PHONE VIEW</a>
       <button onclick="fetch('/api/host/logout',{method:'POST'}).then(()=>location.reload())" class="btn btn-ghost btn-sm">LOGOUT</button>
     </div>
   </div>
@@ -269,6 +270,15 @@
               NEW HOST PASSWORD
             </label>
             <input id="new-password" type="password" class="input-field" placeholder="Leave blank to keep current" style="margin-bottom:0">
+          </div>
+
+          <!-- Photos password -->
+          <div>
+            <label style="font-size:0.78rem;color:var(--text-dim);display:block;margin-bottom:6px">
+              NEW PHOTOS PASSWORD
+            </label>
+            <input id="new-photos-password" type="password" class="input-field" placeholder="For guests who review photos" autocomplete="new-password" style="margin-bottom:0">
+            <div style="font-size:0.7rem;color:var(--text-muted);margin-top:4px">They log in at /host/photos and can only review tonight's photos. Changing it signs them out.</div>
           </div>
 
           <!-- Party URL -->

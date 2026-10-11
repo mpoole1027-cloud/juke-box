@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="{{ ui_theme }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#f5efe1" data-default="#f5efe1">
+  <title>Host</title>
+  <link rel="stylesheet" href="{{ asset('css/jukebox.css') }}">
+{% include '_theme_links.html' %}
+  <link rel="stylesheet" href="{{ asset('css/host_m.css') }}">
+</head>
+<body class="hm">
+
+<div id="toast-container" class="toast-container"></div>
+
+<!-- ── Login ── -->
+<div id="login-view" class="host-login-wrap hidden">
+  <div class="host-login-box card">
+    <h1>HOST LOGIN</h1>
+    <form id="login-form">
+      <input id="login-password" type="password" class="input-field" placeholder="Host password..." autocomplete="current-password" required>
+      <div id="login-error" class="hidden" style="color:var(--warning);font-size:0.82rem;margin-bottom:10px"></div>
+      <button type="submit" class="btn btn-primary w-full">ENTER THE BOOTH</button>
+    </form>
+  </div>
+</div>
+
+<!-- ── Panel ── -->
+<div id="panel-view" class="hidden">
+
+  <header class="hm-top">
+    <div class="hm-title">
+      <h1>Host</h1>
+      <a href="/host" class="hm-link">Full panel</a>
+    </div>
+    <div id="health" class="hm-health" aria-live="polite">
+      <span class="hm-pill" id="health-music"><i></i>Music</span>
+      <span class="hm-pill" id="health-spotify"><i></i>Spotify</span>
+      <span class="hm-pill" id="health-lights"><i></i>Lights</span>
+    </div>
+    <div id="health-msg" class="hm-health-msg hidden"></div>
+  </header>
+
+  <main class="hm-main">
+
+    <!-- ── Music ── -->
+    <section id="tab-music" class="hm-tab" data-tab="music">
+      <div id="playback-issue" class="hm-banner hm-banner-warn hidden"></div>
+      <div id="standby" class="hm-banner hidden">
+        <span>Standing by: the jukebox stopped controlling Spotify after a quiet spell.</span>
+        <button id="resume-btn" class="btn btn-primary btn-sm" type="button">RESUME</button>
+      </div>
+
+      <div class="card hm-now">
+        <div id="now-playing" class="hm-now-track"><span class="hm-dim">Nothing playing</span></div>
+        <button id="skip-btn" class="btn btn-primary hm-big" type="button">⏭ SKIP</button>
+      </div>
+
+      <div class="card">
+        <div class="hm-card-head">
+          <h2>Up next <span id="queue-count" class="hm-dim"></span></h2>
+          <button id="clear-queue-btn" class="btn btn-ghost btn-sm" type="button">CLEAR</button>
+        </div>
+        <div id="queue-list" class="hm-list"></div>
+      </div>
+
+      <div class="card" id="search-wrap">
+        <h2>Add a song</h2>
+        <input id="search-input" type="search" class="input-field" placeholder="Search Spotify…" autocomplete="off" enterkeyhint="search">
+        <div id="search-results" class="hm-list"></div>
+      </div>
+    </section>
+
+    <!-- ── Lights ── -->
+    <section id="tab-lights" class="hm-tab hidden" data-tab="lights">
+      <div id="lights-offline" class="hm-banner hm-banner-warn hidden">
+        Can't reach the lights. Check the party-lights service on the Mac.
+      </div>
+      <div id="lights-panel">
+        <button id="blackout-btn" class="hm-blackout" type="button" aria-pressed="false">BLACKOUT</button>
+        <div id="lights-status" class="hm-dim hm-center"></div>
+        <button id="auto-btn" class="btn btn-cyan hm-big hidden" type="button">↺ BACK TO THE AUTO SHOW</button>
+
+        <div class="card">
+          <h2>Presets</h2>
+          <p class="hm-hint">Calm to wild. A preset holds until you go back to auto.</p>
+          <div id="presets" class="hm-presets"></div>
+        </div>
+
+        <div class="card">
+          <label class="hm-slider">
+            <span>Brightness <b id="master-val"></b></span>
+            <input id="master-slider" type="range" min="0" max="100" step="1">
+          </label>
+          <label class="hm-slider">
+            <span>Vibe <b id="vibe-val"></b></span>
+            <input id="vibe-slider" type="range" min="0" max="100" step="5">
+            <span class="hm-slider-ends"><span>Calm</span><span>Wild</span></span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Party ── -->
+    <section id="tab-party" class="hm-tab hidden" data-tab="party">
+      <div class="card">
+        <h2>Costume contest</h2>
+        <p id="costume-phase" class="hm-hint"></p>
+        <div class="hm-row">
+          <button id="costume-open" class="btn btn-primary" type="button">OPEN VOTING</button>
+          <button id="costume-close" class="btn btn-cyan" type="button">CLOSE &amp; REVEAL</button>
+          <button id="costume-off" class="btn btn-ghost" type="button">HIDE</button>
+        </div>
+        <div id="costume-tally" class="hm-list"></div>
+      </div>
+
+      <div class="card">
+        <div class="hm-card-head">
+          <h2>Disposable camera</h2>
+          <label class="hm-switch"><input id="camera-toggle" type="checkbox"><span></span></label>
+        </div>
+        <p id="camera-counts" class="hm-hint"></p>
+        <a href="/host/photos" class="btn btn-ghost btn-sm">REVIEW PHOTOS</a>
+      </div>
+
+      <div class="card hm-center">
+        <h2>Invite</h2>
+        <img id="qr-img" class="hm-qr" alt="Party QR code">
+        <div class="hm-code">Code <b id="party-code"></b></div>
+        <div class="hm-row hm-row-center">
+          <button id="share-btn" class="btn btn-primary btn-sm" type="button">SHARE LINK</button>
+          <a id="tv-link" href="/tv" class="btn btn-ghost btn-sm" target="_blank" rel="noopener">TV</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Guests <span id="guest-count" class="hm-dim"></span></h2>
+        <input id="guest-filter" type="search" class="input-field" placeholder="Find a guest…" autocomplete="off">
+        <div id="guest-list" class="hm-list"></div>
+      </div>
+    </section>
+
+    <!-- ── Stats ── -->
+    <section id="tab-stats" class="hm-tab hidden" data-tab="stats">
+      <div id="stat-tiles" class="hm-tiles"></div>
+      <div class="card">
+        <h2>Top requesters</h2>
+        <div id="stat-top" class="hm-list"></div>
+      </div>
+      <div class="card">
+        <h2>Songs</h2>
+        <div id="stat-songs" class="hm-list"></div>
+      </div>
+      <p id="stat-since" class="hm-hint hm-center"></p>
+    </section>
+  </main>
+
+  <nav class="hm-tabs" role="tablist">
+    <button role="tab" data-tab="music" aria-selected="true"><span>🎵</span>Music</button>
+    <button role="tab" data-tab="lights"><span>💡</span>Lights</button>
+    <button role="tab" data-tab="party"><span>🎃</span>Party</button>
+    <button role="tab" data-tab="stats"><span>📊</span>Stats</button>
+  </nav>
+</div>
+
+<!-- Confirm sheet, instead of confirm(), which phones render badly -->
+<div id="sheet" class="hm-sheet hidden" role="dialog" aria-modal="true">
+  <div class="hm-sheet-box">
+    <p id="sheet-msg"></p>
+    <div class="hm-row">
+      <button id="sheet-cancel" class="btn btn-ghost" type="button">CANCEL</button>
+      <button id="sheet-ok" class="btn btn-danger" type="button">OK</button>
+    </div>
+  </div>
+</div>
+
+<script src="{{ asset('js/host_m.js') }}"></script>
+</body>
+</html>

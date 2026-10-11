@@ -384,6 +384,8 @@ $('save-settings-btn').addEventListener('click', async () => {
   };
   const newPw = $('new-password').value.trim();
   if (newPw) body.host_password = newPw;
+  const photosPw = $('new-photos-password')?.value.trim();
+  if (photosPw) body.photos_password = photosPw;
 
   const partyUrl = $('party-url-input').value.trim();
   if (partyUrl) body.party_url = partyUrl;
@@ -400,6 +402,7 @@ $('save-settings-btn').addEventListener('click', async () => {
   if (res.ok) {
     showToast('Settings saved!', 'success');
     $('new-password').value = '';
+    if ($('new-photos-password')) $('new-photos-password').value = '';
     loadSpotifyStatus();
   } else {
     let msg = 'Failed to save settings';

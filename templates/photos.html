@@ -12,13 +12,13 @@
 
 <div id="toast-container" class="toast-container"></div>
 
-<!-- Login (same host password as /host) -->
+<!-- Login: the photos password, or the host password -->
 <div id="login-view" class="host-login-wrap hidden">
   <div class="host-login-box card">
     <h1>PHOTO REVIEW</h1>
-    <p style="color:var(--text-dim);font-size:0.82rem;margin-bottom:20px">Enter your host password to review tonight's photos</p>
+    <p style="color:var(--text-dim);font-size:0.82rem;margin-bottom:20px">Enter the photos password to review tonight's photos</p>
     <form id="login-form">
-      <input id="login-password" type="password" class="input-field" placeholder="Host password..." autocomplete="current-password" required>
+      <input id="login-password" type="password" class="input-field" placeholder="Photos password..." autocomplete="current-password" required>
       <div id="login-error" class="hidden" style="color:var(--warning);font-size:0.82rem;margin-bottom:10px"></div>
       <button type="submit" class="btn btn-primary w-full">LOG IN</button>
     </form>
@@ -29,9 +29,9 @@
   <header class="review-header">
     <h1>📸 Photo Review</h1>
     <div class="review-header-controls">
-      <label for="party-select" style="font-size:0.78rem;color:var(--text-dim)">Party</label>
-      <select id="party-select" class="input-field"></select>
-      <a href="/host" class="btn btn-ghost btn-sm">HOST PANEL</a>
+      <label for="party-select" class="host-only hidden" style="font-size:0.78rem;color:var(--text-dim)">Party</label>
+      <select id="party-select" class="input-field host-only hidden"></select>
+      <a href="/host" class="btn btn-ghost btn-sm host-only hidden">HOST PANEL</a>
     </div>
   </header>
 
@@ -53,7 +53,7 @@
   <div id="photo-grid" class="photo-grid"></div>
   <div id="empty-msg" class="review-empty hidden"></div>
 
-  <div class="card review-export">
+  <div class="card review-export host-only hidden">
     <div class="section-header">
       <h2>SHARE THE APPROVED PHOTOS</h2>
       <div class="line"></div>
