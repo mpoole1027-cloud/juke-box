@@ -222,6 +222,12 @@ def check(snap):
             problems.append(Problem('lights:fps', WARNING,
                                     f"Lights are stuttering: {dmx['fps']:.0f} of "
                                     f"{target:.0f} fps.", grace=60))
+        link = dmx.get('link') or {}
+        if link and not link.get('connected', True):
+            problems.append(Problem('lights:dmx_unplugged', CRITICAL,
+                                    "The DMX interface isn't answering, so the fixtures "
+                                    "are dark. Check the ENTTEC's USB cable; the lights "
+                                    "reconnect on their own once it's back.", grace=15))
         if 'null' in (dmx.get('driver') or ''):
             problems.append(Problem('lights:no_dmx', WARNING,
                                     'Lights are running without the DMX interface, so '

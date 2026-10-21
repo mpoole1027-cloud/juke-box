@@ -82,6 +82,15 @@ def test_lights_problems():
     assert keys(snap) == {'lights:fps', 'lights:no_dmx', 'lights:deaf'}
 
 
+def test_unplugged_dmx_is_critical_and_quick():
+    snap = healthy_snap()
+    snap['lights']['dmx']['link'] = {'connected': False, 'error': 'no such file'}
+    [p] = wd.check(snap)
+    assert (p.key, p.severity, p.grace) == ('lights:dmx_unplugged', wd.CRITICAL, 15)
+    snap['lights']['dmx']['link']['connected'] = True
+    assert keys(snap) == set()
+
+
 def test_silence_between_songs_is_fine():
     snap = healthy_snap()
     snap['lights']['music']['silent'] = True
