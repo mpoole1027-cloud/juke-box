@@ -1122,6 +1122,36 @@ def api_host_skip():
     return jsonify({'success': True})
 
 
+@app.route('/api/host/volume')
+@require_host
+def api_host_volume():
+    """The party speaker's volume, from the playback snapshot (no Spotify call).
+    volume is None when nothing is playing or the device doesn't report one."""
+    device = (qm.get_cached_playback() or {}).get('device') or {}
+    return jsonify({'volume': device.get('volume_percent'), 'device': device.get('name')})
+
+
+@app.route('/api/host/volume', methods=['POST'])
+@require_host
+def api_host_volume_set():
+    """{"volume": 0..100} on the device that's playing."""
+    data = request.get_json() or {}
+    try:
+        volume = round(float(data.get('volume')))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'volume must be a number 0..100'}), 400
+    if not 0 <= volume <= 100:
+        return jsonify({'error': 'volume must be a number 0..100'}), 400
+    device = (qm.get_cached_playback() or {}).get('device') or {}
+    ok, err = sc.set_volume(volume, device_id=device.get('id'))
+    if not ok:
+        if 'VOLUME_CONTROL_DISALLOW' in (err or ''):
+            return jsonify({'error': "This speaker doesn't let Spotify change its volume."}), 409
+        return jsonify({'error': "Spotify didn't change the volume."}), 502
+    qm.invalidate_playback_cache()
+    return jsonify({'volume': volume, 'device': device.get('name')})
+
+
 @app.route('/api/host/ban', methods=['POST'])
 @require_host
 def api_host_ban():

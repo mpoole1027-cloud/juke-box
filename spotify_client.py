@@ -275,6 +275,20 @@ def play_track(track_uri, device_id=None):
         return False, str(e)
 
 
+def set_volume(percent, device_id=None):
+    """Set the playing device's volume, 0..100. Some speakers refuse remote
+    volume changes (Spotify answers VOLUME_CONTROL_DISALLOW); the error says so."""
+    sp = get_spotify()
+    if not sp:
+        return False, "Not authenticated with Spotify"
+    try:
+        sp.volume(int(percent), device_id=device_id)
+        return True, None
+    except Exception as e:
+        logger.error(f"Error setting volume: {e}")
+        return False, str(e)
+
+
 def clear_jukebox_playlist(playlist_id):
     sp = get_spotify()
     if not sp:
