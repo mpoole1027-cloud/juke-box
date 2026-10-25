@@ -215,3 +215,53 @@ def test_post_discord_sends_json_with_mentions_allowed():
     server.server_close()
     assert got[0]['content'] == 'hi'
     assert 'everyone' in got[0]['allowed_mentions']['parse']
+
+
+# ── Tunnel auto-restart ──────────────────────────────────────────────────────
+
+DOWN = ('https://pooleparty.fun', False, 'answered 530')
+UP = ('https://pooleparty.fun', True, 'answered 200')
+
+
+def medic(internet=True):
+    restarts = []
+    m = wd.TunnelMedic(probe=lambda: internet, restart=lambda: restarts.append(1) or True)
+    return m, restarts
+
+
+def test_short_blip_is_left_alone():
+    m, restarts = medic()
+    assert m.observe(DOWN, 0) is None
+    assert m.observe(UP, 60) is None
+    assert m.observe(DOWN, 120) is None
+    assert m.observe(DOWN, 120 + wd.TUNNEL_STUCK_SECONDS - 1) is None
+    assert restarts == []
+
+
+def test_stuck_tunnel_is_restarted_once_per_cooldown():
+    m, restarts = medic()
+    m.observe(DOWN, 0)
+    assert 'restarted' in m.observe(DOWN, wd.TUNNEL_STUCK_SECONDS)
+    assert m.observe(DOWN, wd.TUNNEL_STUCK_SECONDS + 60) is None
+    assert m.observe(DOWN, wd.TUNNEL_STUCK_SECONDS + wd.TUNNEL_RESTART_COOLDOWN)
+    assert len(restarts) == 2
+
+
+def test_no_restart_when_the_internet_is_down_too():
+    m, restarts = medic(internet=False)
+    m.observe(DOWN, 0)
+    assert m.observe(DOWN, wd.TUNNEL_STUCK_SECONDS * 3) is None
+    assert restarts == []
+
+
+def test_autorestart_can_be_switched_off():
+    m, restarts = medic()
+    m.observe(DOWN, 0, enabled=False)
+    assert m.observe(DOWN, wd.TUNNEL_STUCK_SECONDS * 2, enabled=False) is None
+    assert restarts == []
+
+
+def test_unchecked_polls_dont_count():
+    m, restarts = medic()
+    assert m.observe(None, 0) is None
+    assert m.down_since is None

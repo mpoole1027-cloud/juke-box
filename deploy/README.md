@@ -63,6 +63,10 @@ phone ──https──▶ party.example.com ──Cloudflare──▶ cloudflar
    ```sh
    .venv/bin/python deploy/preflight.py
    ```
+   Besides the jukebox, Spotify and the tunnel, it checks the DMX link and frame
+   rate, whether the Mac is on Wi-Fi (use Ethernet: this Mac's Wi-Fi stalls for
+   ~20 s at a time and the tunnel drops with it), free disk and log sizes, and
+   that alerts are live and not muted.
 4. Open `https://party.example.com/host`. Log in and connect Spotify if asked.
    Check the playback device in Settings (if the Mac is the only computer
    running Spotify, it's pinned automatically), then click **Start new party**. That
@@ -77,7 +81,13 @@ everything every 15 seconds. When something breaks it posts to a Discord channel
 and it posts again when the problem clears. It watches the three services, the
 jukebox's health and Spotify, the public link, the lights (frozen, stuttering,
 no DMX adapter, deaf to the music), power, disk space, and new crashes in `logs/`.
-It never restarts or changes anything.
+
+It changes one thing on its own: if guests can't reach the public link for 3
+minutes while the internet itself answers, it restarts the tunnel service (at
+most once every 10 minutes). cloudflared can get stuck after a Wi-Fi drop and
+stop retrying; on 2026-10-22 that left the site down for 1h45m. Wi-Fi blips,
+and outages where the internet is down too, are left alone. Set
+`PARTY_TUNNEL_AUTORESTART=0` in `.env` to turn this off.
 
 Short blips (a service restarting, one slow answer) are ignored. A problem has
 to last 30 seconds to a couple of minutes, depending on what it is. Critical
