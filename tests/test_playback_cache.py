@@ -77,3 +77,54 @@ def test_concurrent_misses_share_one_fetch(qm, counted, monkeypatch):
     for t in threads:
         t.join()
     assert counted.playback_calls == 1
+
+
+def _hang_until(event, real):
+    def hung():
+        event.wait(5)
+        return real()
+    return hung
+
+
+def test_requests_get_the_stale_snapshot_while_a_fetch_hangs(qm, counted, monkeypatch):
+    """A fetch stuck on the network (DNS outage, 2026-10-15) must not hold up
+    other requests: they answer from the last snapshot straight away."""
+    counted.playing, counted.is_playing = TRACK_A, True
+    qm._store_snapshot(counted.get_current_playback())
+    later = time.monotonic() + qm.POLL_SECONDS + 5
+    monkeypatch.setattr(qm.time, 'monotonic', lambda: later)
+    release = threading.Event()
+    monkeypatch.setattr(counted, 'get_current_playback',
+                        _hang_until(release, counted.get_current_playback))
+    stuck = threading.Thread(target=qm.get_cached_playback)
+    stuck.start()
+    try:
+        deadline = time.time() + 2
+        while not qm._fetch_lock.locked() and time.time() < deadline:
+            time.sleep(0.01)
+        t0 = time.time()
+        assert qm.get_cached_playback()['item']['id'] == TRACK_A
+        assert time.time() - t0 < 0.5
+    finally:
+        release.set()
+        stuck.join()
+
+
+def test_with_no_snapshot_a_request_gives_up_on_a_hung_fetch(qm, counted, monkeypatch):
+    qm._store_snapshot(None)
+    qm.invalidate_playback_cache()
+    monkeypatch.setattr(qm, 'FETCH_WAIT_SECONDS', 0.2)
+    release = threading.Event()
+    monkeypatch.setattr(counted, 'get_current_playback',
+                        _hang_until(release, counted.get_current_playback))
+    stuck = threading.Thread(target=qm.get_cached_playback)
+    stuck.start()
+    try:
+        while not qm._fetch_lock.locked():
+            time.sleep(0.01)
+        t0 = time.time()
+        assert qm.get_cached_playback() is None
+        assert time.time() - t0 < 1.0
+    finally:
+        release.set()
+        stuck.join()

@@ -130,23 +130,41 @@ def invalidate_playback_cache():
         _snapshot = None
 
 
+#: With no snapshot at all, how long a request waits for someone else's fetch.
+FETCH_WAIT_SECONDS = 2
+
+
 def get_cached_playback(max_age=POLL_SECONDS + 1):
-    """What Spotify is playing, at most max_age seconds old.
+    """What Spotify is playing, at most max_age seconds old when Spotify answers.
 
     Normally the worker keeps this fresh. When it isn't polling (standing down,
     or between ticks after an invalidation), the first request thread through
-    refreshes it and concurrent ones wait for and reuse that one result.
+    refreshes it and concurrent ones reuse that one result.
+
+    Requests never queue behind a slow fetch: while one is running they get
+    the last snapshot, however old. On 2026-10-15 a DNS outage made each fetch
+    take ~90 s (three retries of a 30 s lookup the 5 s timeout doesn't cover),
+    and every waitress thread piled up behind _fetch_lock until the site hung.
     """
     snap = _snapshot
     if snap and time.monotonic() - snap[0] <= max_age:
         return snap[1]
-    with _fetch_lock:
+    if snap:
+        got = _fetch_lock.acquire(blocking=False)
+    else:
+        got = _fetch_lock.acquire(timeout=FETCH_WAIT_SECONDS)
+    if not got:
+        snap = _snapshot
+        return snap[1] if snap else None
+    try:
         snap = _snapshot
         if snap and time.monotonic() - snap[0] <= max_age:
             return snap[1]
         playback = sc.get_current_playback()
         _store_snapshot(playback)
         return playback
+    finally:
+        _fetch_lock.release()
 
 
 def note_activity():
