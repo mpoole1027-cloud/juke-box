@@ -8,7 +8,7 @@ import random
 import io
 import logging
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 from flask import (
@@ -239,6 +239,8 @@ def party_links():
         'party_code': code,
         'invite_url': f'{base}/?p={code}',
         'tv_url': f'{base}/tv?p={code}',
+        'wall_url': f'{base}/wall?p={code}',
+        'recap_url': f'{base}/recap?p={code}',
     }
 
 
@@ -295,15 +297,53 @@ def _resolve_current_track():
 
 
 def _camera_state(user_id):
-    """What the guest's disposable camera shows: on/off and film left tonight."""
+    """What the guest's disposable camera shows: on/off, film left tonight, and
+    when tonight's photos develop."""
     total = int(db.get_setting('camera_shots_per_guest', '24'))
     used = db.count_user_photos(user_id, db.get_setting('party_code', '')) if user_id else 0
+    develop_at = _develop_at()
     return {
         'enabled': db.get_setting('camera_enabled', '1') == '1',
         'shots_total': total,
         'shots_left': max(0, total - used),
         'viewfinder_filter': db.get_setting('camera_viewfinder_filter', '1') == '1',
+        'develop_at': develop_at,
+        'developed': time.time() >= develop_at,
     }
+
+
+# ---------------------------------------------------------------------------
+# Develop at midnight: tonight's photos stay in the darkroom until develop_at,
+# then play as a slideshow on /wall (the TV switches to it on its own).
+# ---------------------------------------------------------------------------
+def _sqlite_to_epoch(text):
+    """SQLite's CURRENT_TIMESTAMP format (UTC) as a Unix time, or None."""
+    try:
+        return datetime.strptime(text, '%Y-%m-%d %H:%M:%S').replace(
+            tzinfo=timezone.utc).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def _develop_at(now=None):
+    """When tonight's photos develop, as a Unix time. The host's pick, else the
+    first local midnight after the party started."""
+    try:
+        return float(db.get_setting('develop_at', ''))
+    except (TypeError, ValueError):
+        pass
+    start = _sqlite_to_epoch(db.get_setting('party_started_at', '')) or (now or time.time())
+    local = datetime.fromtimestamp(start).astimezone()
+    midnight = (local + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return midnight.timestamp()
+
+
+def _wall_statuses():
+    """Which photos the wall shows: approved ones, or every one not rejected
+    when the host has no reviewers on duty."""
+    if db.get_setting('wall_include_pending', '0') == '1':
+        return ('approved', 'pending')
+    return ('approved',)
 
 
 COSTUME_MAX_LEN = 40
@@ -450,6 +490,107 @@ def tv():
         _accept_party_code(request.args['p'])
         return redirect(url_for('tv'))
     return render_template('tv.html', ui_theme=_ui_theme())
+
+
+@app.route('/wall')
+def wall():
+    """The photo wall: a darkroom countdown, then tonight's photos as a slideshow."""
+    if 'p' in request.args:
+        _accept_party_code(request.args['p'])
+        return redirect(url_for('wall'))
+    return render_template('wall.html', ui_theme=_ui_theme())
+
+
+@app.route('/api/wall')
+@require_party
+def api_wall():
+    """Countdown until develop_at; after it, the photos the wall may show."""
+    now = time.time()
+    develop_at = _develop_at(now)
+    party = db.get_setting('party_code', '')
+    developed = now >= develop_at
+    shots = db.list_photos(party_code=party)
+    out = {
+        'develop_at': develop_at,
+        'now': now,
+        'developed': developed,
+        'shots': len(shots),
+        'photos': [],
+    }
+    if developed:
+        allowed = _wall_statuses()
+        out['photos'] = [
+            {'id': p['id'], 'by': p['nickname'], 'w': p['width'], 'h': p['height']}
+            for p in shots if p['status'] in allowed
+        ]
+    track, _, _ = _resolve_current_track()
+    out['now_playing'] = ({k: track.get(k) for k in ('track_name', 'artist', 'album_art')}
+                          if track else None)
+    return jsonify(out)
+
+
+@app.route('/api/wall/photo/<int:photo_id>')
+@require_party
+def api_wall_photo(photo_id):
+    """One developed photo, for anyone at tonight's party."""
+    photo = db.get_photo(photo_id)
+    if (not photo or photo['party_code'] != db.get_setting('party_code', '')
+            or time.time() < _develop_at() or photo['status'] not in _wall_statuses()):
+        return jsonify({'error': 'Photo not found'}), 404
+    try:
+        path = photos.path_for(photo['filename'])
+    except photos.PhotoError:
+        return jsonify({'error': 'Photo not found'}), 404
+    if not os.path.exists(path):
+        return jsonify({'error': 'Photo file is missing'}), 404
+    res = send_file(path, mimetype='image/jpeg')
+    # The slideshow loops, so let the browser keep it; never a shared cache.
+    res.headers['Cache-Control'] = 'private, max-age=3600'
+    return res
+
+
+def _setlist_name():
+    start = _sqlite_to_epoch(db.get_setting('party_started_at', '')) or time.time()
+    day = datetime.fromtimestamp(start).astimezone()
+    return f"Party setlist · {day.strftime('%b')} {day.day}, {day.year}"
+
+
+@app.route('/recap')
+def recap():
+    """The night in one page: setlist, stats, the costume winner, the photos."""
+    if 'p' in request.args:
+        _accept_party_code(request.args['p'])
+        return redirect(url_for('recap'))
+    return render_template('recap.html', ui_theme=_ui_theme())
+
+
+@app.route('/api/recap')
+@require_party
+def api_recap():
+    party = db.get_setting('party_code', '')
+    since = _party_since()
+    developed = time.time() >= _develop_at()
+    allowed = _wall_statuses()
+    setlist = db.get_plays(party)
+    costume = _costume_tv()
+    return jsonify({
+        'title': _setlist_name().replace('Party setlist · ', ''),
+        'stats': db.get_party_stats(since, party),
+        'leaderboards': db.get_leaderboards(since, party),
+        'setlist': [
+            {k: p[k] for k in ('spotify_track_id', 'track_name', 'artist', 'album_art',
+                               'played_at', 'requested_by', 'hearts')}
+            for p in setlist
+        ],
+        'setlist_url': db.get_setting('setlist_playlist_url', '') or None,
+        'costume': costume.get('results') if costume.get('phase') == 'closed' else None,
+        'developed': developed,
+        'develop_at': _develop_at(),
+        'photos': ([{'id': p['id'], 'by': p['nickname']}
+                    for p in db.list_photos(party_code=party) if p['status'] in allowed]
+                   if developed else []),
+        'ui_theme': _ui_theme(),
+    })
 
 
 @app.route('/api/join', methods=['POST'])
@@ -1109,11 +1250,12 @@ def api_tv():
         'current_track': current_track,
         'reactions': reactions,
         'queue': queue,
-        'stats': db.get_party_stats(),
-        'leaderboards': db.get_leaderboards(),
+        'stats': db.get_party_stats(_party_since(), db.get_setting('party_code', '')),
+        'leaderboards': db.get_leaderboards(_party_since(), db.get_setting('party_code', '')),
         'recent_reactions': db.get_recent_reactions(20),
         'ui_theme': _ui_theme(),
         'costume': _costume_tv(),
+        'developed': time.time() >= _develop_at(),
     })
 
 
@@ -1251,6 +1393,24 @@ def api_host_settings():
     if 'camera_viewfinder_filter' in data:
         db.set_setting('camera_viewfinder_filter', '1' if data['camera_viewfinder_filter'] else '0')
 
+    if data.get('develop_now'):
+        db.set_setting('develop_at', str(time.time()))
+    elif 'develop_at' in data:
+        raw = data['develop_at']
+        if raw in (None, ''):
+            db.set_setting('develop_at', '')        # back to midnight
+        else:
+            try:
+                when = float(raw)
+            except (TypeError, ValueError):
+                return jsonify({'error': 'Develop time must be a Unix time.'}), 400
+            if abs(when - time.time()) > 7 * 86400:
+                return jsonify({'error': 'Pick a develop time within a week.'}), 400
+            db.set_setting('develop_at', str(when))
+
+    if 'wall_include_pending' in data:
+        db.set_setting('wall_include_pending', '1' if data['wall_include_pending'] else '0')
+
     if 'camera_shots_per_guest' in data:
         try:
             val = int(data['camera_shots_per_guest'])
@@ -1352,6 +1512,8 @@ def api_host_new_party():
     db.rotate_party_code()
     db.set_setting('costume_phase', 'off')
     db.set_setting('party_started_at', _sqlite_utc(time.time()))
+    db.set_setting('develop_at', '')     # tonight's photos develop at the next midnight
+    db.set_setting('setlist_playlist_url', '')
     session['party_code'] = db.get_setting('party_code')
     qm.resume_party()
     return jsonify({'success': True, **stats, **party_links()})
@@ -1423,6 +1585,11 @@ def api_host_camera():
         'enabled': db.get_setting('camera_enabled', '1') == '1',
         'shots_per_guest': int(db.get_setting('camera_shots_per_guest', '24')),
         'viewfinder_filter': db.get_setting('camera_viewfinder_filter', '1') == '1',
+        'develop_at': _develop_at(),
+        'develop_set': bool(db.get_setting('develop_at', '')),
+        'developed': time.time() >= _develop_at(),
+        'wall_include_pending': db.get_setting('wall_include_pending', '0') == '1',
+        'wall_url': party_links()['wall_url'],
         'current_party': db.get_setting('party_code', ''),
         'parties': db.photo_parties(),
     })
@@ -1671,12 +1838,43 @@ def _sqlite_utc(ts):
     return time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(ts))
 
 
+def _party_since(now=None):
+    """When tonight's party started, in SQLite's timestamp format: the last
+    "Start new party", but never more than DEFAULT_PARTY_HOURS ago."""
+    fallback = _sqlite_utc((now or time.time()) - DEFAULT_PARTY_HOURS * 3600)
+    return max(db.get_setting('party_started_at', '') or fallback, fallback)
+
+
+@app.route('/api/host/setlist', methods=['POST'])
+@require_host
+def api_host_setlist():
+    """Save tonight's setlist to a private Spotify playlist, or update the one
+    saved earlier tonight. Safe to press as often as you like."""
+    party = db.get_setting('party_code', '')
+    tracks = [p['spotify_track_id'] for p in db.get_plays(party)]
+    if not tracks:
+        return jsonify({'error': 'Nothing has played yet tonight.'}), 400
+    saved_for = db.get_setting('setlist_party_code', '')
+    existing = db.get_setting('setlist_playlist_id', '') if saved_for == party else ''
+    try:
+        playlist_id, url = sc.save_setlist(
+            tracks, _setlist_name(),
+            f'Every song played at the party, in order. {len(tracks)} songs.',
+            playlist_id=existing or None)
+    except Exception as e:
+        logger.error("Couldn't save the setlist: %s", e)
+        return jsonify({'error': f"Spotify didn't take the setlist: {e}"}), 502
+    db.set_setting('setlist_playlist_id', playlist_id)
+    db.set_setting('setlist_playlist_url', url)
+    db.set_setting('setlist_party_code', party)
+    return jsonify({'success': True, 'url': url, 'songs': len(tracks), 'updated': bool(existing)})
+
+
 @app.route('/api/host/stats')
 @require_host
 def api_host_stats():
     now = time.time()
-    fallback = _sqlite_utc(now - DEFAULT_PARTY_HOURS * 3600)
-    since = max(db.get_setting('party_started_at', '') or fallback, fallback)
+    since = _party_since(now)
     stats = db.host_stats(db.get_setting('party_code', ''), since,
                           _sqlite_utc(now - ACTIVE_WINDOW_SECONDS))
     return jsonify({**stats, 'since': since})

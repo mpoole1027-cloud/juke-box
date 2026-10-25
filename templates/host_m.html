@@ -120,7 +120,12 @@
           <label class="hm-switch"><input id="camera-toggle" type="checkbox"><span></span></label>
         </div>
         <p id="camera-counts" class="hm-hint"></p>
-        <a href="/host/photos" class="btn btn-ghost btn-sm">REVIEW PHOTOS</a>
+        <p id="develop-status" class="hm-hint"></p>
+        <div class="hm-row">
+          <a href="/host/photos" class="btn btn-ghost btn-sm">REVIEW PHOTOS</a>
+          <button id="develop-now-btn" class="btn btn-primary btn-sm" type="button">DEVELOP NOW</button>
+          <a id="wall-link" href="/wall" class="btn btn-ghost btn-sm" target="_blank" rel="noopener">PHOTO WALL</a>
+        </div>
       </div>
 
       <div class="card hm-center">
@@ -130,7 +135,12 @@
         <div class="hm-row hm-row-center">
           <button id="share-btn" class="btn btn-primary btn-sm" type="button">SHARE LINK</button>
           <a id="tv-link" href="/tv" class="btn btn-ghost btn-sm" target="_blank" rel="noopener">TV</a>
+          <a id="recap-link" href="/recap" class="btn btn-ghost btn-sm" target="_blank" rel="noopener">RECAP</a>
         </div>
+        <div class="hm-row hm-row-center">
+          <button id="setlist-btn" class="btn btn-ghost btn-sm" type="button">SAVE SETLIST TO SPOTIFY</button>
+        </div>
+        <p id="setlist-status" class="hm-hint"></p>
       </div>
 
       <div class="card">

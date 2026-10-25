@@ -254,6 +254,7 @@ async function loadSpotifyStatus() {
       $('qr-img').src = '/qr?' + Date.now();
       $('party-code').textContent = data.party_code || '';
       $('tv-link').href = data.tv_url || '/tv';
+      if ($('recap-link')) $('recap-link').href = data.recap_url || '/recap';
     }
   } catch (e) {}
 }
@@ -541,8 +542,23 @@ async function loadCamera() {
     $('camera-counts').textContent = tonight
       ? `${tonight.total} photo${tonight.total === 1 ? '' : 's'} tonight · ${tonight.pending} waiting for review`
       : 'No photos yet tonight.';
+    if (cam.develop_at != null && $('develop-status')) {
+      const when = new Date(cam.develop_at * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      $('develop-status').textContent = cam.developed
+        ? 'Developed: the photo wall is live.'
+        : `Photos develop at ${when}. Change the time in the full panel.`;
+      $('develop-now-btn').classList.toggle('hidden', !!cam.developed);
+      if (cam.wall_url) $('wall-link').href = cam.wall_url;
+    }
   } catch (e) {}
 }
+
+$('develop-now-btn')?.addEventListener('click', async () => {
+  if (!confirm("Develop tonight's photos now? The TV switches to the photo wall.")) return;
+  const { ok } = await post('/api/host/settings', { develop_now: true });
+  showToast(ok ? 'Developed! The wall is live.' : 'Failed to develop', ok ? 'success' : 'error');
+  loadCamera();
+});
 
 $('camera-toggle').addEventListener('change', async e => {
   const { ok } = await post('/api/host/settings', { camera_enabled: e.target.checked });
@@ -671,3 +687,30 @@ async function loadStats() {
   } catch (e) {}
   showLogin();
 })();
+
+
+// ----------------------------------------------------------------
+// Setlist: every song played tonight, saved to a private Spotify playlist.
+// Pressing it again updates the same playlist.
+// ----------------------------------------------------------------
+document.getElementById('setlist-btn')?.addEventListener('click', async () => {
+  const btn = document.getElementById('setlist-btn');
+  const status = document.getElementById('setlist-status');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/host/setlist', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      showToast(`${data.updated ? 'Updated' : 'Saved'}: ${data.songs} songs`, 'success');
+      if (status) status.innerHTML = `<a href="${data.url}" target="_blank" rel="noopener">Open the setlist in Spotify</a>`;
+    } else {
+      showToast(data.error || 'Could not save the setlist', 'error');
+    }
+  } catch (e) {
+    showToast('Could not save the setlist', 'error');
+  } finally {
+    btn.disabled = false;
+  }
+});

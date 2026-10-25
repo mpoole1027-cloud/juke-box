@@ -207,6 +207,19 @@ def _get_int_setting(key, default):
         return default
 
 
+def _log_play(track, queue_item):
+    """Add a song that started to tonight's setlist. Never lets a database
+    hiccup stop the worker."""
+    try:
+        images = (track.get('album') or {}).get('images') or []
+        db.log_play(db.get_setting('party_code', ''), track.get('id'), track.get('name'),
+                    ', '.join(a.get('name', '') for a in track.get('artists') or []),
+                    images[0]['url'] if images else None,
+                    queue_item['id'] if queue_item else None)
+    except Exception as e:
+        logger.warning("Couldn't log the play of %s: %s", track.get('id'), e)
+
+
 def _check_downvote_threshold(playing_item):
     """Check if the currently playing item has exceeded the downvote threshold. Skip if so."""
     if not playing_item:
@@ -511,6 +524,8 @@ def background_worker():
                         if matched is None and db.get_pending_queue():
                             logger.info("Autoplay/radio detected — overriding with next pending song.")
                             _advance_to_next_pending()
+                        elif is_playing:
+                            _log_play(spotify_track, matched)
                     else:
                         # (b) Same track still current.
                         if is_playing:

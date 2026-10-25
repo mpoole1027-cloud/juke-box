@@ -160,6 +160,7 @@ async function loadSpotifyStatus() {
       partyUrlEl.textContent = data.invite_url;
       $('party-code-display').textContent = data.party_code || '';
       $('tv-link').href = data.tv_url || '/tv';
+      if ($('recap-link')) $('recap-link').href = data.recap_url || '/recap';
     }
 
     const idleSlider = $('idle-slider');
@@ -651,6 +652,7 @@ async function loadCamera() {
       $('camera-shots-val').textContent = cam.shots_per_guest;
       slider.dataset.loaded = 'true';
     }
+    renderDevelop(cam);
     const tonight = cam.parties.find(p => p.party_code === cam.current_party);
     $('camera-counts').textContent = tonight
       ? `${tonight.total} photo${tonight.total === 1 ? '' : 's'} tonight · ${tonight.pending} waiting for review`
@@ -667,6 +669,44 @@ async function saveCamera(body, okMsg) {
     showToast(msg, 'error');
   }
   loadCamera();
+}
+
+function toLocalInput(ts) {
+  const d = new Date(ts * 1000);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function renderDevelop(cam) {
+  if (cam.develop_at == null || !$('develop-at-input')) return;
+  const input = $('develop-at-input');
+  if (document.activeElement !== input) input.value = toLocalInput(cam.develop_at);
+  const when = new Date(cam.develop_at * 1000).toLocaleString([], {
+    weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  $('develop-status').textContent = cam.developed
+    ? `Developed (${when}). The photo wall is showing tonight's photos.`
+    : `Developing until ${when}${cam.develop_set ? '' : ' (the default: midnight)'}.`;
+  $('wall-pending-toggle').checked = !!cam.wall_include_pending;
+  if (cam.wall_url) $('wall-link').href = cam.wall_url;
+}
+
+if ($('develop-at-input')) {
+  $('develop-at-input').addEventListener('change', e => {
+    const ts = new Date(e.target.value).getTime() / 1000;
+    if (!isNaN(ts)) saveCamera({ develop_at: ts }, 'Develop time saved');
+  });
+  $('develop-midnight-btn').addEventListener('click', () => {
+    saveCamera({ develop_at: null }, 'Photos develop at midnight');
+  });
+  $('develop-now-btn').addEventListener('click', () => {
+    if (confirm('Develop tonight\'s photos now? The TV switches to the photo wall.')) {
+      saveCamera({ develop_now: true }, 'Developed! The wall is live.');
+    }
+  });
+  $('wall-pending-toggle').addEventListener('change', e => {
+    saveCamera({ wall_include_pending: e.target.checked },
+               e.target.checked ? 'Wall shows unreviewed photos too' : 'Wall shows approved photos only');
+  });
 }
 
 $('camera-toggle').addEventListener('change', e => {
@@ -746,3 +786,30 @@ $('costume-close-btn').addEventListener('click', () =>
                   'Close voting and reveal the winner on the TV?'));
 $('costume-off-btn').addEventListener('click', () =>
   setCostumePhase('off', 'Costume contest hidden'));
+
+
+// ----------------------------------------------------------------
+// Setlist: every song played tonight, saved to a private Spotify playlist.
+// Pressing it again updates the same playlist.
+// ----------------------------------------------------------------
+document.getElementById('setlist-btn')?.addEventListener('click', async () => {
+  const btn = document.getElementById('setlist-btn');
+  const status = document.getElementById('setlist-status');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/host/setlist', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      showToast(`${data.updated ? 'Updated' : 'Saved'}: ${data.songs} songs`, 'success');
+      if (status) status.innerHTML = `<a href="${data.url}" target="_blank" rel="noopener">Open the setlist in Spotify</a>`;
+    } else {
+      showToast(data.error || 'Could not save the setlist', 'error');
+    }
+  } catch (e) {
+    showToast('Could not save the setlist', 'error');
+  } finally {
+    btn.disabled = false;
+  }
+});

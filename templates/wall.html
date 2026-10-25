@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="{{ ui_theme }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Party Jukebox — Photo Wall</title>
+  <link rel="stylesheet" href="{{ asset('css/wall.css') }}">
+</head>
+<body>
+
+<!-- Before develop time: the darkroom -->
+<section id="wall-darkroom" class="wall-darkroom">
+  <div class="wall-safelight" aria-hidden="true"></div>
+  <div class="wall-darkroom-body">
+    <div class="wall-kicker">DARKROOM · DO NOT OPEN</div>
+    <h1 class="wall-title">Developing…</h1>
+    <div id="wall-countdown" class="wall-countdown">--:--:--</div>
+    <div id="wall-develop-time" class="wall-sub">Tonight's photos develop at midnight</div>
+    <div class="wall-tank">
+      <span class="wall-tank-icon" aria-hidden="true">🎞</span>
+      <span id="wall-shots">0</span> shots in the tank
+    </div>
+  </div>
+</section>
+
+<!-- The moment they develop -->
+<section id="wall-reveal" class="wall-reveal hidden" aria-live="polite">
+  <div class="wall-reveal-text">The photos have developed!</div>
+</section>
+
+<!-- After: the slideshow -->
+<section id="wall-show" class="wall-show hidden">
+  <div class="wall-slide" id="wall-slide-a"><img alt=""><div class="wall-caption"></div></div>
+  <div class="wall-slide" id="wall-slide-b"><img alt=""><div class="wall-caption"></div></div>
+  <div id="wall-empty" class="wall-empty hidden">
+    <div class="wall-title">Nothing developed yet</div>
+    <div class="wall-sub">Keep shooting! New photos join the wall as they're developed.</div>
+  </div>
+  <div id="wall-count" class="wall-count"></div>
+</section>
+
+<!-- Message when this browser has no party code -->
+<section id="wall-locked" class="wall-locked hidden">
+  <div class="wall-title">Photo wall</div>
+  <div class="wall-sub">Open this screen from the photo wall link in the host panel.</div>
+</section>
+
+<footer id="wall-now" class="wall-now hidden">
+  <img id="wall-now-art" alt="">
+  <span class="wall-now-label">NOW PLAYING</span>
+  <span id="wall-now-title"></span>
+  <span id="wall-now-artist" class="wall-now-artist"></span>
+</footer>
+
+<script src="{{ asset('js/wall.js') }}"></script>
+</body>
+</html>

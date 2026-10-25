@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="{{ ui_theme }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Party Recap</title>
+  <link rel="stylesheet" href="{{ asset('css/jukebox.css') }}">
+{% include '_theme_links.html' %}
+  <link rel="stylesheet" href="{{ asset('css/recap.css') }}">
+  <meta name="theme-color" content="{{ ui_themes[ui_theme].color }}">
+</head>
+<body>
+<div class="container recap">
+
+  <header class="jukebox-header">
+    <div class="header-brand">
+      <div class="header-brand-icon">🎃</div>
+      <div>
+        <h1>The Night</h1>
+        <div id="recap-title" class="tagline">Party recap</div>
+      </div>
+    </div>
+  </header>
+
+  <div id="recap-locked" class="card hidden">
+    <p>Open this page from the party link (scan the QR code, or ask the host for the recap link).</p>
+  </div>
+
+  <div id="recap-body" class="hidden">
+    <div class="card recap-stats">
+      <div class="recap-stat"><b id="rs-songs">0</b><span>songs</span></div>
+      <div class="recap-stat"><b id="rs-guests">0</b><span>guests</span></div>
+      <div class="recap-stat"><b id="rs-hearts">0</b><span>hearts</span></div>
+      <div class="recap-stat"><b id="rs-photos">0</b><span>photos</span></div>
+    </div>
+
+    <div id="recap-costume" class="card hidden">
+      <div class="section-header"><h2>BEST COSTUME</h2><div class="line"></div></div>
+      <div id="recap-costume-list" class="recap-podium"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-header"><h2>THE BOARDS</h2><div class="line"></div></div>
+      <div class="recap-boards">
+        <div><h3>🎧 Top DJs</h3><ol id="rb-djs"></ol></div>
+        <div><h3>♥️ Crowd favourites</h3><ol id="rb-favs"></ol></div>
+        <div><h3>📸 Photographers</h3><ol id="rb-photos"></ol></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-header"><h2>THE PHOTOS</h2><div class="line"></div></div>
+      <p id="recap-photos-note" class="recap-note"></p>
+      <div id="recap-photos" class="recap-photos"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-header"><h2>SETLIST</h2><div class="line"></div></div>
+      <a id="recap-spotify" class="btn btn-primary btn-sm hidden" target="_blank" rel="noopener">▶ LISTEN ON SPOTIFY</a>
+      <ol id="recap-setlist" class="recap-setlist"></ol>
+    </div>
+  </div>
+</div>
+
+<div id="recap-viewer" class="recap-viewer hidden" role="dialog" aria-label="Photo">
+  <img alt="">
+  <div class="recap-viewer-by"></div>
+</div>
+
+<script src="{{ asset('js/recap.js') }}"></script>
+</body>
+</html>

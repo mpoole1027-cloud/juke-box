@@ -515,3 +515,57 @@ def get_active_device_id(preferred_device_id=None):
     except Exception as e:
         logger.error(f"Error getting device ID: {e}")
         return None
+
+
+# ---------------------------------------------------------------------------
+# Setlist playlist
+# ---------------------------------------------------------------------------
+# Paths moved in 2026 (/items for a playlist's tracks, /me/playlists to create);
+# the older ones are tried if Spotify refuses the new ones.
+def _first_ok(attempts):
+    last = None
+    for call in attempts:
+        try:
+            return call()
+        except spotipy.SpotifyException as e:
+            last = e
+            if e.http_status not in (403, 404, 405):
+                raise
+    raise last
+
+
+def save_setlist(track_ids, name, description, playlist_id=None):
+    """Write the setlist to a private playlist: the given one, replaced in
+    place, or a new one. Returns (playlist_id, url), or raises."""
+    sp = get_spotify()
+    if not sp:
+        raise RuntimeError('Spotify is not connected')
+    if playlist_id:
+        try:
+            sp._get(f'playlists/{playlist_id}', fields='id')
+        except spotipy.SpotifyException as e:
+            if e.http_status != 404:
+                raise
+            playlist_id = None      # deleted since: make a new one
+    if not playlist_id:
+        body = {'name': name, 'public': False, 'description': description}
+        created = _first_ok([
+            lambda: sp._post('me/playlists', payload=body),
+            lambda: sp._post(f"users/{sp.me()['id']}/playlists", payload=body),
+        ])
+        playlist_id = created['id']
+    else:
+        _first_ok([lambda: sp._put(f'playlists/{playlist_id}', payload={
+            'name': name, 'description': description})])
+    uris = [f'spotify:track:{t}' for t in track_ids]
+    first, rest = uris[:100], [uris[i:i + 100] for i in range(100, len(uris), 100)]
+    for kind in ('items', 'tracks'):
+        try:
+            sp._put(f'playlists/{playlist_id}/{kind}', payload={'uris': first})
+            for chunk in rest:
+                sp._post(f'playlists/{playlist_id}/{kind}', payload={'uris': chunk})
+            break
+        except spotipy.SpotifyException as e:
+            if kind == 'tracks' or e.http_status not in (403, 404, 405):
+                raise
+    return playlist_id, f'https://open.spotify.com/playlist/{playlist_id}'
