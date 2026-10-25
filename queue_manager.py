@@ -123,6 +123,12 @@ def _store_snapshot(playback):
         _snapshot = (time.monotonic(), playback)
 
 
+def playback_age():
+    """Seconds since the playback snapshot was taken, or None without one."""
+    snap = _snapshot
+    return None if snap is None else time.monotonic() - snap[0]
+
+
 def invalidate_playback_cache():
     """Call after changing what Spotify plays, so pages don't show the old song."""
     global _snapshot

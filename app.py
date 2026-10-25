@@ -661,9 +661,19 @@ def api_now():
     needed and nothing beyond the track; same shape as /api/status's
     current_track. Served from the playback snapshot, so polling it is cheap."""
     track, _, _ = _resolve_current_track()
-    return jsonify({'current_track': (
-        {k: track.get(k) for k in ('track_id', 'track_name', 'artist', 'is_playing')}
-        if track else None)})
+    if not track:
+        return jsonify({'current_track': None})
+    out = {k: track.get(k) for k in ('track_id', 'track_name', 'artist', 'is_playing')}
+    # Where the song is right now, for party-lights' per-song shows: Spotify's
+    # position when the snapshot was taken, carried forward by the snapshot's
+    # age while it plays. Good to about a tenth of a second.
+    age = qm.playback_age()
+    if track.get('progress_ms') is not None and age is not None:
+        moved = age if track.get('is_playing') else 0.0
+        out['position_s'] = round(track['progress_ms'] / 1000 + moved, 3)
+    if track.get('requested_by_nickname'):
+        out['requested_by_nickname'] = track['requested_by_nickname']
+    return jsonify({'current_track': out})
 
 
 @app.route('/healthz')
