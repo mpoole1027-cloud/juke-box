@@ -26,6 +26,7 @@ import database as db
 import photos
 import spotify_client as sc
 import queue_manager as qm
+import setlist
 
 def _configure_logging():
     """Log to stderr, or with LOG_FILE set (as under launchd) to a rotating file
@@ -549,12 +550,6 @@ def api_wall_photo(photo_id):
     return res
 
 
-def _setlist_name():
-    start = _sqlite_to_epoch(db.get_setting('party_started_at', '')) or time.time()
-    day = datetime.fromtimestamp(start).astimezone()
-    return f"Party setlist · {day.strftime('%b')} {day.day}, {day.year}"
-
-
 @app.route('/recap')
 def recap():
     """The night in one page: setlist, stats, the costume winner, the photos."""
@@ -571,16 +566,16 @@ def api_recap():
     since = _party_since()
     developed = time.time() >= _develop_at()
     allowed = _wall_statuses()
-    setlist = db.get_plays(party)
+    plays = db.get_plays(party)
     costume = _costume_tv()
     return jsonify({
-        'title': _setlist_name().replace('Party setlist · ', ''),
+        'title': setlist._name().replace('Party setlist · ', ''),
         'stats': db.get_party_stats(since, party),
         'leaderboards': db.get_leaderboards(since, party),
         'setlist': [
             {k: p[k] for k in ('spotify_track_id', 'track_name', 'artist', 'album_art',
                                'played_at', 'requested_by', 'hearts')}
-            for p in setlist
+            for p in plays
         ],
         'setlist_url': db.get_setting('setlist_playlist_url', '') or None,
         'costume': costume.get('results') if costume.get('phase') == 'closed' else None,
@@ -1850,24 +1845,14 @@ def _party_since(now=None):
 def api_host_setlist():
     """Save tonight's setlist to a private Spotify playlist, or update the one
     saved earlier tonight. Safe to press as often as you like."""
-    party = db.get_setting('party_code', '')
-    tracks = [p['spotify_track_id'] for p in db.get_plays(party)]
-    if not tracks:
-        return jsonify({'error': 'Nothing has played yet tonight.'}), 400
-    saved_for = db.get_setting('setlist_party_code', '')
-    existing = db.get_setting('setlist_playlist_id', '') if saved_for == party else ''
     try:
-        playlist_id, url = sc.save_setlist(
-            tracks, _setlist_name(),
-            f'Every song played at the party, in order. {len(tracks)} songs.',
-            playlist_id=existing or None)
+        result = setlist.save_tonight()
+    except setlist.NothingPlayed as e:
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         logger.error("Couldn't save the setlist: %s", e)
         return jsonify({'error': f"Spotify didn't take the setlist: {e}"}), 502
-    db.set_setting('setlist_playlist_id', playlist_id)
-    db.set_setting('setlist_playlist_url', url)
-    db.set_setting('setlist_party_code', party)
-    return jsonify({'success': True, 'url': url, 'songs': len(tracks), 'updated': bool(existing)})
+    return jsonify({'success': True, **result})
 
 
 @app.route('/api/host/stats')

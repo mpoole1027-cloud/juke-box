@@ -331,6 +331,14 @@ def check_power():
         ok('On AC power, so the Mac stays awake')
     else:
         warn('On battery. Plug in: the Mac may sleep on battery and stop the party.')
+    try:
+        lid = subprocess.run(['ioreg', '-r', '-k', 'AppleClamshellState', '-d', '1'],
+                             capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        lid = ''
+    if '"AppleClamshellState" = Yes' in lid:
+        warn('The lid is shut. With it closed the Mac runs in DarkWake and the lights '
+             'stutter; open it (the screen can sleep).')
 
 
 def main():

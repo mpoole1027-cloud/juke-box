@@ -74,6 +74,40 @@ phone ──https──▶ party.example.com ──Cloudflare──▶ cloudflar
 5. Put the QR code (or **Copy invite link**) where guests can see it, and open
    **Open TV screen** on the TV.
 
+Or let one command do steps 3–4's checks and the switches you'd forget:
+
+```sh
+.venv/bin/python deploy/party.py on --new-party   # asks for the host password
+```
+
+It starts a new party (fresh code, clean queue, photos develop at the next
+midnight), unmutes the watchdog and sets `PARTY_ALERTS_MODE=live`, turns the
+per-song light shows on and drafts cards for any newly mapped songs, runs the
+preflight (including a check that the lid is open) and prints tonight's links.
+Leave out `--new-party` to keep the current code.
+
+### During the night
+
+- **Photos develop at midnight.** Until then `/wall` is a darkroom countdown;
+  at develop time an open TV screen switches to it on its own and the photos
+  play as a slideshow. Change the time, or **Develop now**, in the host
+  panel's camera card. Only approved photos show unless you tick *Wall shows
+  photos nobody has reviewed yet*.
+- **Save setlist to Spotify** (host panel) writes every song that played to a
+  private playlist; pressing it again updates the same one.
+- `/recap` is the night on one page: stats, the costume podium, the boards,
+  the developed photos and the setlist. Guests with the party code can open it.
+
+### After
+
+```sh
+.venv/bin/python deploy/party.py off --title "Halloween 2026"
+```
+
+Saves the setlist, exports the approved photos to `exports/`, compresses the
+big service logs into `logs/archive/` (restarting those services), and puts
+alerts back in test mode.
+
 ## Alerts on Discord
 
 The watchdog service (`deploy/watchdog.py`, installed by `install.sh`) checks

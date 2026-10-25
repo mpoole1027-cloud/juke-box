@@ -41,7 +41,7 @@ def test_save_setlist_creates_then_updates_one_playlist(host, db, monkeypatch):
     def save(tracks, name, description, playlist_id=None):
         calls.append((tuple(tracks), playlist_id))
         return 'p' * 22, 'https://open.spotify.com/playlist/' + 'p' * 22
-    monkeypatch.setattr(app_module.sc, 'save_setlist', save)
+    monkeypatch.setattr(app_module.setlist.sc, 'save_setlist', save)
     first = c.post('/api/host/setlist', json={}).get_json()
     db.log_play(code, TRACK_B, 'B', 'Band')
     second = c.post('/api/host/setlist', json={}).get_json()
@@ -60,7 +60,7 @@ def test_a_spotify_failure_is_reported(host, db, monkeypatch):
 
     def broken(*a, **k):
         raise RuntimeError('403 Forbidden')
-    monkeypatch.setattr(app_module.sc, 'save_setlist', broken)
+    monkeypatch.setattr(app_module.setlist.sc, 'save_setlist', broken)
     res = c.post('/api/host/setlist', json={})
     assert res.status_code == 502 and '403' in res.get_json()['error']
 

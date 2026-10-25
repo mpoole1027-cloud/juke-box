@@ -97,7 +97,9 @@ It serves with waitress on port 5001 by default, as **one process**: the queue m
 | `/host` | Host control panel: QR code, party code, invite link, TV link |
 | `/?p=CODE` | Guest jukebox (the QR code and invite link open this) |
 | `/tv?p=CODE` | TV display (use **Open TV screen** in the host panel) |
-| `/host/photos` | Review disposable camera photos after the party |
+| `/host/photos` | Review disposable camera photos |
+| `/wall?p=CODE` | Photo wall: a darkroom countdown, then tonight's photos as a slideshow |
+| `/recap?p=CODE` | The night on one page: stats, costume podium, boards, photos, setlist |
 | `/api/now` | Just the current track, for party-lights and other local tools |
 | `/healthz` | Health check used by `deploy/preflight.py` |
 
