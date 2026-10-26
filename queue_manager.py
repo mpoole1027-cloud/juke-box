@@ -29,6 +29,13 @@ _stop_event = threading.Event()
 # their own song over the one that just began.
 PLAY_GRACE_SECONDS = 10
 _last_play_started = 0.0
+# Spotify can accept a play command and then not play anything (seen
+# 2026-10-25 with the Mac's lid shut and the app idle). Reading that silence as
+# "the song ended" burned four queued songs in a minute, each marked played and
+# so un-requestable. A song now counts as started only once Spotify reports it
+# playing; if it hasn't within START_TIMEOUT_SECONDS it goes back to the queue.
+START_TIMEOUT_SECONDS = 20
+_start_confirmed = False
 
 # Idle standby. A forgotten server once controlled this account's playback for
 # 44 days; after IDLE_SHUTDOWN_HOURS with no guest or host action the worker
@@ -63,12 +70,19 @@ ISSUE_MESSAGES = {
     'play_failed': (
         "Spotify wouldn't play the next song ({detail}). Retrying every few seconds.",
         "Music is paused while the host sorts something out."),
+    'not_starting': (
+        "Spotify took the song but isn't playing it. Check the Spotify app on the "
+        "party Mac (open the lid, unlock it, press play once). The song stays at "
+        "the top of the queue and retries on its own.",
+        "Music is paused while the host sorts out the speakers."),
 }
 # Issues the worker clears or retries on its own, vs. ones only a successful
 # play clears.
 _SPOTIFY_STATE_ISSUES = ('spotify_not_connected', 'spotify_rate_limited',
                          'spotify_unreachable')
 _PLAY_ISSUES = ('no_device', 'play_failed')
+# Cleared only once music is actually heard to play, not by an accepted command.
+_START_ISSUES = ('not_starting',)
 
 
 def _set_issue(code, detail=''):
@@ -318,6 +332,19 @@ def _start_fallback(device_id=None):
     return False
 
 
+def _requeue_unstarted():
+    """The song we asked for never started: put it back at the top of the queue
+    rather than marking it played, and tell the host."""
+    global _current_spotify_track_id, _last_playing_queue_id, _current_is_ours
+    logger.warning("Spotify accepted the song but never played it; putting it back in the queue.")
+    if _last_playing_queue_id:
+        db.update_queue_status(_last_playing_queue_id, 'pending')
+    _set_issue('not_starting')
+    _current_spotify_track_id = None
+    _last_playing_queue_id = None
+    _current_is_ours = False
+
+
 def _finish_current_track():
     """Retire the track we were tracking.
 
@@ -346,7 +373,7 @@ def _advance_to_next_pending():
     Returns the started queue item, or None if we fell back / did nothing.
     """
     global _current_spotify_track_id, _last_playing_queue_id, _current_is_ours
-    global _last_play_started
+    global _last_play_started, _start_confirmed
     device_id = get_party_device_id()
     pending = db.get_pending_queue()
     if pending:
@@ -356,6 +383,7 @@ def _advance_to_next_pending():
         if ok:
             invalidate_playback_cache()
             _last_play_started = time.monotonic()
+            _start_confirmed = False
             db.update_queue_status(next_item['id'], 'playing')
             _current_spotify_track_id = next_item['spotify_track_id']
             _last_playing_queue_id = next_item['id']
@@ -402,7 +430,7 @@ def play_if_idle():
 
 def background_worker():
     global _current_spotify_track_id, _last_playing_queue_id, _current_is_ours
-    global _standing_down, _last_playback_error
+    global _standing_down, _last_playback_error, _start_confirmed
 
     logger.info("Queue manager background thread started.")
     while not _stop_event.is_set():
@@ -456,7 +484,7 @@ def background_worker():
             pb = state['playback']
             if pb and pb.get('is_playing'):
                 # Music is coming out of something, so any device problem is over.
-                _clear_issue(_PLAY_ISSUES)
+                _clear_issue(_PLAY_ISSUES + _START_ISSUES)
 
             with _lock:
                 playback = state['playback']
@@ -466,10 +494,15 @@ def background_worker():
                     # tracking just ended — if the host stopped Spotify while
                     # nothing of ours was playing, leave it stopped rather than
                     # forcing the fallback playlist back on.
-                    if _current_spotify_track_id:
+                    if _current_spotify_track_id and _current_is_ours and not _start_confirmed:
+                        # We asked for a song and Spotify hasn't played it yet.
+                        if time.monotonic() - _last_play_started >= START_TIMEOUT_SECONDS:
+                            _requeue_unstarted()
+                    elif _current_spotify_track_id:
                         _finish_current_track()
                         _advance_to_next_pending()
-                    elif (_playback_issue and _playback_issue['code'] in _PLAY_ISSUES
+                    elif (_playback_issue
+                          and _playback_issue['code'] in _PLAY_ISSUES + _START_ISSUES
                           and db.get_pending_queue()):
                         # A song is waiting only because the last play attempt
                         # failed (no device, Spotify said no). Retry each tick
@@ -480,6 +513,8 @@ def background_worker():
                     spotify_track = playback['item']
                     spotify_track_id = spotify_track.get('id')
                     is_playing = playback.get('is_playing', False)
+                    if is_playing and spotify_track_id == _current_spotify_track_id:
+                        _start_confirmed = True
                     progress_ms = playback.get('progress_ms') or 0
                     duration_ms = spotify_track.get('duration_ms') or 0
                     near_end = bool(duration_ms) and progress_ms >= duration_ms - END_THRESHOLD_MS
@@ -494,6 +529,7 @@ def background_worker():
                             _finish_current_track()
 
                         _current_spotify_track_id = spotify_track_id
+                        _start_confirmed = is_playing
 
                         # Find the matching queue item and mark it playing.
                         matched = None
@@ -538,7 +574,12 @@ def background_worker():
                                 if playing_item:
                                     _check_downvote_threshold(playing_item)
                         else:
-                            if near_end:
+                            if (_current_is_ours and not _start_confirmed
+                                    and time.monotonic() - _last_play_started >= START_TIMEOUT_SECONDS):
+                                # Loaded but never started: put it back and ask again.
+                                _requeue_unstarted()
+                                _advance_to_next_pending()
+                            elif near_end:
                                 # Ended / paused-at-end — advance.
                                 _finish_current_track()
                                 _advance_to_next_pending()

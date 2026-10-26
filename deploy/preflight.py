@@ -148,9 +148,14 @@ def check_spotify_devices():
     except Exception as e:
         warn(f'Skipped ({e})')
         return
+    if not db.get_setting('fallback_playlist_id'):
+        warn('No fallback playlist, so the music stops whenever the queue runs dry. '
+             'Set one in host Settings (the Halloween playlist, say).')
     devices = sc.list_devices()
     if not devices:
-        bad('No Spotify Connect device online. Open Spotify on the party Mac.')
+        bad('No Spotify Connect device online. Open Spotify on the party Mac. If it is '
+            "open and still missing (lid shut, screen asleep), wake it: osascript -e "
+            "'tell application \"Spotify\" to play' -e 'tell application \"Spotify\" to pause'")
         return
     pinned = db.get_setting('preferred_device_id') or ''
     names = ', '.join(d['name'] for d in devices)

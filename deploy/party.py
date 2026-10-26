@@ -87,12 +87,16 @@ def new_party():
     import json
     jar = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+    import database as db
+    # Through the party URL: behind the tunnel the host cookie is https-only,
+    # so a login over plain http to localhost wouldn't stick.
+    base = (db.get_setting('party_url') or LOCAL).rstrip('/')
     password = getpass.getpass('  Host password: ')
     try:
-        post(f'{LOCAL}/api/host/login', json.dumps({'password': password}).encode(), opener)
+        post(f'{base}/api/host/login', json.dumps({'password': password}).encode(), opener)
     except urllib.error.HTTPError:
         sys.exit('  That password was refused; nothing changed.')
-    res = json.loads(post(f'{LOCAL}/api/host/new_party', opener=opener).read())
+    res = json.loads(post(f'{base}/api/host/new_party', opener=opener).read())
     say(f"New party code {res.get('party_code')}. Queue cleared, photos develop at the next midnight.")
 
 
