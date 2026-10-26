@@ -1,0 +1,36 @@
+/* Party recap: one scrolling page on top of the jukebox's own look. */
+.recap .card { margin-bottom: 16px; }
+.recap-stats { display: grid; grid-template-columns: repeat(4, 1fr); text-align: center; gap: 8px; }
+.recap-stat b { display: block; font-size: 1.8rem; color: var(--primary); }
+.recap-stat span { font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim); }
+
+.recap-podium { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+.recap-podium figure { width: 30%; min-width: 96px; text-align: center; margin: 0; }
+.recap-podium img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; }
+.recap-podium figcaption { font-size: 0.82rem; margin-top: 6px; }
+.recap-podium .first img { outline: 3px solid var(--primary); }
+
+.recap-boards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.recap-boards h3 { font-size: 0.85rem; margin-bottom: 6px; }
+.recap-boards ol { padding-left: 1.3em; font-size: 0.85rem; }
+.recap-boards li { margin: 3px 0; }
+.recap-boards .n { color: var(--text-dim); margin-left: 4px; }
+
+.recap-note { font-size: 0.82rem; color: var(--text-dim); margin-bottom: 8px; }
+.recap-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+.recap-photos img {
+  width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 4px; cursor: zoom-in;
+  background: rgba(127, 127, 127, 0.15);
+}
+
+.recap-setlist { padding-left: 2.2em; margin-top: 10px; }
+.recap-setlist li { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 0.88rem; }
+.recap-setlist .artist, .recap-setlist .meta { color: var(--text-dim); }
+.recap-setlist .meta { font-size: 0.75rem; display: block; }
+
+.recap-viewer {
+  position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, 0.92);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+}
+.recap-viewer img { max-width: 94vw; max-height: 84vh; border: 8px solid #f7f3ea; border-bottom-width: 22px; }
+.recap-viewer-by { color: #eee; font-style: italic; }

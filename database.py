@@ -165,6 +165,20 @@ def init_db():
                     voted_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (party_code, voter_id)
                 );
+
+                -- Every song that actually played, guest request or fallback
+                -- playlist alike: the night's setlist and the recap page.
+                CREATE TABLE IF NOT EXISTS plays (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    party_code TEXT NOT NULL,
+                    spotify_track_id TEXT NOT NULL,
+                    track_name TEXT,
+                    artist TEXT,
+                    album_art TEXT,
+                    queue_id INTEGER,
+                    played_at TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE INDEX IF NOT EXISTS plays_by_party ON plays(party_code, id);
             """)
 
             _add_sort_order_column(conn)
@@ -190,6 +204,7 @@ def init_db():
                     (key, value)
                 )
             _ensure_host_password_hash(cursor)
+            _ensure_photos_password_hash(cursor)
             cursor.execute(
                 "INSERT OR IGNORE INTO settings (key, value) VALUES ('party_code', ?)",
                 (generate_party_code(),))
@@ -257,6 +272,29 @@ def set_host_password(password):
 
 def host_password_is_placeholder():
     return any(check_host_password(pw) for pw in PLACEHOLDER_HOST_PASSWORDS)
+
+
+# A second, weaker role: trusted guests who review camera photos and nothing
+# else. No hash means reviewer login is off.
+def _ensure_photos_password_hash(cursor):
+    """PHOTOS_PASSWORD seeds the reviewer password once; the host panel owns it after."""
+    env_pw = os.environ.get('PHOTOS_PASSWORD', '').strip()
+    if env_pw:
+        cursor.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('photos_password_hash', ?)",
+            (generate_password_hash(env_pw),))
+
+
+def check_photos_password(password):
+    stored = get_setting('photos_password_hash')
+    return bool(stored and password) and check_password_hash(stored, password)
+
+
+def set_photos_password(password):
+    """Set the reviewer password and bump its version, which signs out every
+    reviewer logged in with the old one."""
+    set_setting('photos_password_hash', generate_password_hash(password))
+    set_setting('photos_pw_version', secrets.token_hex(4))
 
 
 def get_setting(key, default=None):
@@ -809,63 +847,142 @@ def remove_pending_by_user(queue_id, user_id):
             conn.close()
 
 
-def get_party_stats():
+def get_party_stats(since, party_code):
+    """The TV's numbers for this party: users, queue history and reactions
+    outlive a party, so everything counts from `since` (when it started) or is
+    per party_code. A guest is anyone named who did something tonight."""
     with _db_lock:
         conn = get_connection()
         try:
-            songs_played = conn.execute(
-                "SELECT COUNT(*) as cnt FROM queue WHERE status = 'played'"
-            ).fetchone()['cnt']
-            guest_count = conn.execute(
-                "SELECT COUNT(*) as cnt FROM users WHERE user_id != 'host'"
-            ).fetchone()['cnt']
-            total_reactions = conn.execute(
-                "SELECT COUNT(*) as cnt FROM reactions"
-            ).fetchone()['cnt']
-            party_start = conn.execute(
-                "SELECT MIN(first_seen) as ps FROM users WHERE user_id != 'host'"
-            ).fetchone()['ps']
+            def one(sql, *args):
+                return conn.execute(sql, args).fetchone()[0] or 0
             return {
-                'songs_played': songs_played,
-                'guest_count': guest_count,
-                'total_reactions': total_reactions,
-                'party_start': party_start,
+                'songs_played': one(
+                    "SELECT COUNT(*) FROM queue WHERE status = 'played' AND added_at >= ?", since),
+                'guest_count': one(
+                    "SELECT COUNT(*) FROM users WHERE user_id != 'host' AND name_set = 1 AND ("
+                    " first_seen >= ?"
+                    " OR user_id IN (SELECT requested_by FROM queue WHERE added_at >= ?)"
+                    " OR user_id IN (SELECT user_id FROM reactions WHERE created_at >= ?)"
+                    " OR user_id IN (SELECT user_id FROM photos WHERE party_code = ?)"
+                    " OR user_id IN (SELECT voter_id FROM costume_votes WHERE party_code = ?))",
+                    since, since, since, party_code, party_code),
+                'total_reactions': one("SELECT COUNT(*) FROM reactions WHERE created_at >= ?", since),
+                'photos': one("SELECT COUNT(*) FROM photos WHERE party_code = ?", party_code),
+                'party_start': since,
             }
         finally:
             conn.close()
 
 
-def get_leaderboards():
+def get_leaderboards(since, party_code):
+    """Tonight's boards for the TV, counted from `since` like get_party_stats."""
     with _db_lock:
         conn = get_connection()
         try:
             top_djs = conn.execute(
                 "SELECT u.nickname, COUNT(*) as count "
                 "FROM queue q JOIN users u ON q.requested_by = u.user_id "
-                "WHERE q.status = 'played' AND q.requested_by != 'host' "
+                "WHERE q.status = 'played' AND q.requested_by != 'host' AND q.added_at >= ? "
                 "GROUP BY q.requested_by "
-                "ORDER BY count DESC LIMIT 5"
+                "ORDER BY count DESC, MIN(q.id) LIMIT 5", (since,)
             ).fetchall()
 
             crowd_favorites = conn.execute(
                 "SELECT q.track_name, q.artist, COUNT(r.id) as reaction_count "
                 "FROM queue q JOIN reactions r ON r.queue_id = q.id "
-                "WHERE q.status IN ('played', 'playing') "
+                "WHERE q.status IN ('played', 'playing') AND q.added_at >= ? "
                 "GROUP BY q.id "
                 "HAVING reaction_count >= 1 "
-                "ORDER BY reaction_count DESC LIMIT 5"
+                "ORDER BY reaction_count DESC, q.id LIMIT 5", (since,)
             ).fetchall()
 
+            # Skip counts are reset when a new party starts, so they're tonight's.
             most_skipped = conn.execute(
                 "SELECT nickname, songs_skipped_count "
                 "FROM users WHERE songs_skipped_count > 0 AND user_id != 'host' "
                 "ORDER BY songs_skipped_count DESC LIMIT 5"
             ).fetchall()
 
+            photographers = conn.execute(
+                "SELECT u.nickname, COUNT(*) AS count FROM photos p "
+                "JOIN users u ON u.user_id = p.user_id WHERE p.party_code = ? "
+                "GROUP BY p.user_id ORDER BY count DESC, MIN(p.id) LIMIT 5", (party_code,)
+            ).fetchall()
+
             return {
                 'top_djs': [dict(r) for r in top_djs],
                 'crowd_favorites': [dict(r) for r in crowd_favorites],
                 'most_skipped': [dict(r) for r in most_skipped],
+                'photographers': [dict(r) for r in photographers],
+            }
+        finally:
+            conn.close()
+
+
+def host_stats(party_code, since, active_since):
+    """Numbers for the host's phone. Queue history and reactions outlive a
+    party, so they count from `since` (when this party started); photos and
+    the costume contest are already per party_code. `active_since` is the
+    cutoff for "active now": anyone who queued, reacted, shot or voted."""
+    with _db_lock:
+        conn = get_connection()
+        try:
+            def one(sql, *args):
+                return conn.execute(sql, args).fetchone()[0] or 0
+
+            def song(sql):
+                row = conn.execute(sql, (since,)).fetchone()
+                return dict(row) if row and row['votes'] else None
+
+            top = conn.execute(
+                "SELECT u.nickname, COUNT(*) AS n FROM queue q "
+                "JOIN users u ON u.user_id = q.requested_by "
+                "WHERE q.added_at >= ? AND q.requested_by != 'host' "
+                "GROUP BY q.requested_by ORDER BY n DESC, MIN(q.id) LIMIT 3",
+                (since,)).fetchall()
+            pending = conn.execute(
+                "SELECT COUNT(*), SUM(duration_ms) FROM queue WHERE status = 'pending'"
+            ).fetchone()
+            return {
+                'guests': one("SELECT COUNT(*) FROM users WHERE user_id != 'host' AND name_set = 1"),
+                'banned': one("SELECT COUNT(*) FROM users WHERE is_banned = 1"),
+                'active_now': one(
+                    "SELECT COUNT(DISTINCT uid) FROM ("
+                    " SELECT requested_by AS uid FROM queue WHERE added_at >= ?"
+                    " UNION SELECT user_id FROM reactions WHERE created_at >= ?"
+                    " UNION SELECT user_id FROM photos WHERE created_at >= ?"
+                    " UNION SELECT voter_id FROM costume_votes WHERE voted_at >= ?"
+                    ") WHERE uid != 'host'", *([active_since] * 4)),
+                'songs_played': one(
+                    "SELECT COUNT(*) FROM queue WHERE status = 'played' AND added_at >= ?", since),
+                'songs_skipped': one(
+                    "SELECT COUNT(*) FROM queue WHERE status = 'skipped' AND added_at >= ?", since),
+                'songs_requested': one("SELECT COUNT(*) FROM queue WHERE added_at >= ?", since),
+                'queue_depth': pending[0] or 0,
+                'queue_ms': pending[1] or 0,
+                'top_requesters': [dict(r) for r in top],
+                'most_upvoted': song(
+                    "SELECT q.track_name, q.artist, COUNT(v.id) AS votes FROM queue q "
+                    "JOIN upvotes v ON v.queue_id = q.id WHERE q.added_at >= ? "
+                    "GROUP BY q.id ORDER BY votes DESC, q.id LIMIT 1"),
+                'most_downvoted': song(
+                    "SELECT q.track_name, q.artist, COUNT(v.id) AS votes FROM queue q "
+                    "JOIN downvotes v ON v.queue_id = q.id WHERE q.added_at >= ? "
+                    "GROUP BY q.id ORDER BY votes DESC, q.id LIMIT 1"),
+                'most_hearted': song(
+                    "SELECT q.track_name, q.artist, COUNT(r.id) AS votes FROM queue q "
+                    "JOIN reactions r ON r.queue_id = q.id WHERE r.created_at >= ? "
+                    "GROUP BY q.id ORDER BY votes DESC, q.id LIMIT 1"),
+                'hearts': one("SELECT COUNT(*) FROM reactions WHERE created_at >= ?", since),
+                'photos': one("SELECT COUNT(*) FROM photos WHERE party_code = ?", party_code),
+                'photos_pending': one(
+                    "SELECT COUNT(*) FROM photos WHERE party_code = ? AND status = 'pending'",
+                    party_code),
+                'costume_entries': one(
+                    "SELECT COUNT(*) FROM costume_entries WHERE party_code = ?", party_code),
+                'costume_votes': one(
+                    "SELECT COUNT(*) FROM costume_votes WHERE party_code = ?", party_code),
             }
         finally:
             conn.close()
@@ -895,6 +1012,60 @@ def get_or_create_host_user():
                 "INSERT OR IGNORE INTO users (user_id, nickname) VALUES ('host', 'DJ Host')"
             )
             conn.commit()
+        finally:
+            conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Setlist
+# ---------------------------------------------------------------------------
+#: A track seen again this soon after it was logged is the same play (a
+#: restart mid-song), not a second one.
+PLAY_DEDUPE_SECONDS = 15 * 60
+
+
+def log_play(party_code, track_id, track_name, artist, album_art=None, queue_id=None):
+    """Record that a song started playing. Returns False for a duplicate."""
+    with _db_lock:
+        conn = get_connection()
+        try:
+            last = conn.execute(
+                "SELECT spotify_track_id, played_at FROM plays WHERE party_code = ? "
+                "ORDER BY id DESC LIMIT 1", (party_code,)).fetchone()
+            if last and last['spotify_track_id'] == track_id:
+                age = conn.execute("SELECT (julianday('now') - julianday(?)) * 86400",
+                                   (last['played_at'],)).fetchone()[0]
+                if age is not None and age < PLAY_DEDUPE_SECONDS:
+                    if queue_id:
+                        conn.execute("UPDATE plays SET queue_id = ? WHERE id = "
+                                     "(SELECT MAX(id) FROM plays WHERE party_code = ?)",
+                                     (queue_id, party_code))
+                        conn.commit()
+                    return False
+            conn.execute(
+                "INSERT INTO plays (party_code, spotify_track_id, track_name, artist, "
+                "album_art, queue_id) VALUES (?, ?, ?, ?, ?, ?)",
+                (party_code, track_id, track_name, artist, album_art, queue_id))
+            conn.commit()
+            return True
+        finally:
+            conn.close()
+
+
+def get_plays(party_code):
+    """Tonight's setlist in order, with who asked for each and its hearts."""
+    with _db_lock:
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT p.spotify_track_id, p.track_name, p.artist, p.album_art, p.played_at, "
+                "CASE WHEN q.requested_by = 'host' THEN NULL ELSE u.nickname END AS requested_by, "
+                "q.status AS queue_status, "
+                "(SELECT COUNT(*) FROM reactions r WHERE r.queue_id = p.queue_id) AS hearts "
+                "FROM plays p LEFT JOIN queue q ON q.id = p.queue_id "
+                "LEFT JOIN users u ON u.user_id = q.requested_by "
+                "WHERE p.party_code = ? ORDER BY p.id", (party_code,)).fetchall()
+            return [dict(r) for r in rows]
         finally:
             conn.close()
 

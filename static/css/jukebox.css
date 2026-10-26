@@ -1385,7 +1385,7 @@ input[type="range"]::-webkit-slider-thumb {
 .tv-statbar {
   grid-area: stats;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 20px;
   padding: 22px 32px;
   background: var(--card);

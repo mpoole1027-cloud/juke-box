@@ -37,7 +37,9 @@ def test_status_without_code_shows_only_now_playing(app_module, db):
     db.add_to_queue('q' * 22, 'Queued', 'Someone', '', 1000, 'host')
     data = app_module.app.test_client().get('/api/status').get_json()
     assert data['party_code_required'] is True
-    assert data['current_track'] == {
+    track = dict(data['current_track'])
+    track.pop('position_s', None)       # where the song is: for party-lights, harmless
+    assert track == {
         'track_id': 'n' * 22, 'track_name': 'Now', 'artist': 'Band', 'is_playing': True}
     assert 'queue' not in data
 

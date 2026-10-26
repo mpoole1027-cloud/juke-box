@@ -63,12 +63,50 @@ phone ──https──▶ party.example.com ──Cloudflare──▶ cloudflar
    ```sh
    .venv/bin/python deploy/preflight.py
    ```
+   Besides the jukebox, Spotify and the tunnel, it checks the DMX link and frame
+   rate, whether the Mac is on Wi-Fi (use Ethernet: this Mac's Wi-Fi stalls for
+   ~20 s at a time and the tunnel drops with it), free disk and log sizes, and
+   that alerts are live and not muted.
 4. Open `https://party.example.com/host`. Log in and connect Spotify if asked.
    Check the playback device in Settings (if the Mac is the only computer
    running Spotify, it's pinned automatically), then click **Start new party**. That
    gives you a fresh party code.
 5. Put the QR code (or **Copy invite link**) where guests can see it, and open
    **Open TV screen** on the TV.
+
+Or let one command do steps 3–4's checks and the switches you'd forget:
+
+```sh
+.venv/bin/python deploy/party.py on --new-party   # asks for the host password
+```
+
+It starts a new party (fresh code, clean queue, photos develop at the next
+midnight), unmutes the watchdog and sets `PARTY_ALERTS_MODE=live`, turns the
+per-song light shows on and drafts cards for any newly mapped songs, runs the
+preflight (including a check that the lid is open) and prints tonight's links.
+Leave out `--new-party` to keep the current code.
+
+### During the night
+
+- **Photos develop at midnight.** Until then `/wall` is a darkroom countdown;
+  at develop time an open TV screen switches to it on its own and the photos
+  play as a slideshow. Change the time, or **Develop now**, in the host
+  panel's camera card. Only approved photos show unless you tick *Wall shows
+  photos nobody has reviewed yet*.
+- **Save setlist to Spotify** (host panel) writes every song that played to a
+  private playlist; pressing it again updates the same one.
+- `/recap` is the night on one page: stats, the costume podium, the boards,
+  the developed photos and the setlist. Guests with the party code can open it.
+
+### After
+
+```sh
+.venv/bin/python deploy/party.py off --title "Halloween 2026"
+```
+
+Saves the setlist, exports the approved photos to `exports/`, compresses the
+big service logs into `logs/archive/` (restarting those services), and puts
+alerts back in test mode.
 
 ## Alerts on Discord
 
@@ -77,7 +115,13 @@ everything every 15 seconds. When something breaks it posts to a Discord channel
 and it posts again when the problem clears. It watches the three services, the
 jukebox's health and Spotify, the public link, the lights (frozen, stuttering,
 no DMX adapter, deaf to the music), power, disk space, and new crashes in `logs/`.
-It never restarts or changes anything.
+
+It changes one thing on its own: if guests can't reach the public link for 3
+minutes while the internet itself answers, it restarts the tunnel service (at
+most once every 10 minutes). cloudflared can get stuck after a Wi-Fi drop and
+stop retrying; on 2026-10-22 that left the site down for 1h45m. Wi-Fi blips,
+and outages where the internet is down too, are left alone. Set
+`PARTY_TUNNEL_AUTORESTART=0` in `.env` to turn this off.
 
 Short blips (a service restarting, one slow answer) are ignored. A problem has
 to last 30 seconds to a couple of minutes, depending on what it is. Critical
@@ -111,6 +155,10 @@ that happened in one check goes out as one message.
 - `touch logs/watchdog.mute` silences Discord while you work on the code
   (restarting a service on purpose alerts too). `rm logs/watchdog.mute` turns
   it back on. Alerts still go to `logs/watchdog.log` while muted.
+- `PARTY_ALERTS_MODE=test` in `.env` quiets Discord while you're testing:
+  only new critical problems, no mentions, no 15-minute reminders, and
+  "back to normal" only for problems that lasted 5+ minutes. Set it to `live`
+  (or remove it) before the party. The log still records everything.
 
 ## After the party: share the photos
 

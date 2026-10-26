@@ -1,5 +1,6 @@
 /* ================================================================
-   photos.js  –  Host photo review (/host/photos)
+   photos.js  –  Photo review (/host/photos), for the host or a guest
+                 with the photos password (tonight's photos only)
    ================================================================ */
 
 const $ = id => document.getElementById(id);
@@ -32,6 +33,7 @@ let party = '';
 let statusFilter = 'pending';
 let photos = [];          // what the grid shows
 let viewerIndex = -1;     // index into photos while the viewer is open
+let isHost = false;       // reviewers get tonight only and no export
 
 const imgUrl = id => `/api/host/photos/${id}/image`;
 
@@ -40,20 +42,20 @@ const imgUrl = id => `/api/host/photos/${id}/image`;
 // ----------------------------------------------------------------
 async function checkAuth() {
   try {
-    const data = await (await fetch('/api/host/auth_check')).json();
-    if (data.authenticated) return start();
+    const data = await (await fetch('/api/photos/auth_check')).json();
+    if (data.authenticated) return start(data.is_host);
   } catch (e) {}
   $('login-view').classList.remove('hidden');
 }
 
 $('login-form').addEventListener('submit', async e => {
   e.preventDefault();
-  const res = await jsonFetch('/api/host/login', {
+  const res = await jsonFetch('/api/photos/login', {
     method: 'POST', body: JSON.stringify({ password: $('login-password').value }),
   });
   if (res.ok) {
     $('login-view').classList.add('hidden');
-    start();
+    start((await res.json()).is_host);
   } else {
     const data = await res.json().catch(() => ({}));
     $('login-error').textContent = data.error || 'Login failed';
@@ -65,6 +67,7 @@ $('login-form').addEventListener('submit', async e => {
 // Loading
 // ----------------------------------------------------------------
 async function loadParties() {
+  if (!isHost) return loadTonight();
   const cam = await (await jsonFetch('/api/host/camera')).json();
   const parties = cam.parties.slice();
   if (!parties.some(p => p.party_code === cam.current_party)) {
@@ -91,6 +94,19 @@ async function loadParties() {
   $('export-cmd').textContent = `.venv/bin/python deploy/export_photos.py --party ${party}`;
 }
 
+// Reviewers can't list parties; count tonight's photos from the list itself.
+async function loadTonight() {
+  const data = await (await jsonFetch('/api/host/photos')).json();
+  party = data.party;
+  const counts = { total: data.photos.length, pending: 0, approved: 0, rejected: 0 };
+  data.photos.forEach(p => { counts[p.status] += 1; });
+  document.querySelectorAll('.review-tab').forEach(tab => {
+    const s = tab.dataset.status;
+    tab.querySelector('span').textContent = s ? counts[s] : counts.total;
+  });
+  $('approve-all-btn').disabled = !counts.pending;
+}
+
 async function loadPhotos() {
   const q = new URLSearchParams({ party });
   if (statusFilter) q.set('status', statusFilter);
@@ -108,7 +124,9 @@ async function refresh() {
   }
 }
 
-function start() {
+function start(host) {
+  isHost = !!host;
+  document.querySelectorAll('.host-only').forEach(el => el.classList.toggle('hidden', !isHost));
   $('review-view').classList.remove('hidden');
   refresh();
 }

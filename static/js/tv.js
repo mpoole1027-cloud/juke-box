@@ -55,8 +55,10 @@ function fmtTime(ms) {
 
 function fmtRuntime(startStr) {
   if (!startStr) return '—';
-  // party_start is "YYYY-MM-DD HH:MM:SS" (local server time). Parse safely.
-  const iso = String(startStr).replace(' ', 'T');
+  // party_start is SQLite's CURRENT_TIMESTAMP, "YYYY-MM-DD HH:MM:SS" in UTC.
+  // Without the Z the browser reads it as local time and the runtime comes
+  // out short by the time zone offset (7 h in Arizona).
+  const iso = String(startStr).replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(startStr) ? '' : 'Z');
   const start = new Date(iso);
   if (isNaN(start.getTime())) return '—';
   let diff = Date.now() - start.getTime();
@@ -219,6 +221,13 @@ function renderLeaderboards(lb) {
     name: escHtml(r.track_name) + ' <span class="tv-lb-sub">— ' + escHtml(r.artist) + '</span>',
     val: '♥️ ' + r.reaction_count
   }));
+  // ?. : the page may be an older cached copy without this board.
+  if ($('tv-lb-photographers')) {
+    renderLeaderboard('tv-lb-photographers', lb.photographers, r => ({
+      name: escHtml(r.nickname),
+      val: '📸 ' + r.count
+    }));
+  }
   renderLeaderboard('tv-lb-skipped', lb.most_skipped, r => ({
     name: escHtml(r.nickname),
     val: '⏭️ ' + r.songs_skipped_count
@@ -235,6 +244,8 @@ function renderStats(stats) {
   $('tv-stat-songs').textContent = stats.songs_played != null ? stats.songs_played : 0;
   $('tv-stat-guests').textContent = stats.guest_count != null ? stats.guest_count : 0;
   $('tv-stat-reactions').textContent = stats.total_reactions != null ? stats.total_reactions : 0;
+  const photos = $('tv-stat-photos');
+  if (photos) photos.textContent = stats.photos != null ? stats.photos : 0;
   partyStart = stats.party_start || null;
   updateRuntime();
 }
@@ -419,6 +430,20 @@ function hideCostumeReveal() {
 }
 
 // ----------------------------------------------------------------
+// Develop at midnight: when tonight's photos develop while this screen is
+// up, it hands over to the photo wall. Opened after that, it stays here.
+// ----------------------------------------------------------------
+let wasDeveloped = null;
+
+function followDevelop(developed) {
+  if (developed === undefined) return;
+  if (wasDeveloped === false && developed === true) {
+    window.location.href = '/wall';
+  }
+  wasDeveloped = developed;
+}
+
+// ----------------------------------------------------------------
 // Poll
 // ----------------------------------------------------------------
 async function pollTv() {
@@ -441,6 +466,7 @@ async function pollTv() {
     spawnFloaters(data.recent_reactions);
     renderTicker(data);
     renderCostume(data.costume);
+    followDevelop(data.developed);
   } catch (e) {
     console.error('TV poll error:', e);
   }

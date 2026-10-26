@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import random
@@ -26,15 +27,60 @@ SCOPES = (
 )
 
 
+#: Seconds to wait on accounts.spotify.com for a token. spotipy's default is
+#: no timeout at all, so one stalled refresh used to park its thread for good.
+TOKEN_TIMEOUT = 10
+
+
+class _AtomicCacheFileHandler(CacheFileHandler):
+    """CacheFileHandler that writes a temp file and renames it into place.
+
+    spotipy's handler truncates token_cache.json and then writes it, so a
+    reader in another thread (or two refreshes at once) could see half a file,
+    read that as "no token", and report Spotify as disconnected mid-party.
+    """
+
+    def save_token_to_cache(self, token_info):
+        tmp = f"{self.cache_path}.{os.getpid()}.{threading.get_ident()}.tmp"
+        try:
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                f.write(json.dumps(token_info, cls=self.encoder_cls))
+            os.replace(tmp, self.cache_path)
+        except OSError:
+            logger.warning(f"Couldn't write token to cache at: {self.cache_path}")
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+
+
+def _cache_handler():
+    return _AtomicCacheFileHandler(cache_path=TOKEN_CACHE_PATH)
+
+
+def _cached_login():
+    """The cached token if it covers our scopes, else None. Never touches the
+    network (spotipy's get_cached_token refreshes inline, with no timeout)."""
+    token_info = _cache_handler().get_cached_token()
+    if not token_info or not token_info.get('refresh_token'):
+        return None
+    granted = set((token_info.get('scope') or '').split())
+    if 'scope' in token_info and not set(SCOPES.split()) <= granted:
+        return None     # new scopes since the login: the host must reconnect
+    return token_info
+
+
 def get_oauth(show_dialog=False):
     return SpotifyOAuth(
         client_id=os.environ.get('SPOTIFY_CLIENT_ID', ''),
         client_secret=os.environ.get('SPOTIFY_CLIENT_SECRET', ''),
         redirect_uri=os.environ.get('SPOTIFY_REDIRECT_URI', 'http://127.0.0.1:5001/auth/callback'),
         scope=SCOPES,
-        cache_handler=CacheFileHandler(cache_path=TOKEN_CACHE_PATH),
+        cache_handler=_cache_handler(),
         open_browser=False,
         show_dialog=show_dialog,
+        requests_timeout=TOKEN_TIMEOUT,
     )
 
 
@@ -84,9 +130,14 @@ def _make_session():
     # One shared session so calls reuse connections. Same retries as spotipy's
     # default, minus 429.
     session = _SpotifySession()
+    # respect_retry_after_header=False matters: urllib3 otherwise retries ANY
+    # 429/503 that carries Retry-After, forcelist or not, sleeping through it
+    # inside the call. One such sleep holding queue_manager's _fetch_lock hung
+    # every request thread on 2026-10-07.
     retry = Retry(total=3, connect=None, read=False, status=3, backoff_factor=0.3,
                   allowed_methods=frozenset(['GET', 'POST', 'PUT', 'DELETE']),
-                  status_forcelist=(500, 502, 503, 504))
+                  status_forcelist=(500, 502, 503, 504),
+                  respect_retry_after_header=False)
     adapter = requests.adapters.HTTPAdapter(max_retries=retry, pool_maxsize=20)
     session.mount('https://', adapter)
     return session
@@ -108,15 +159,47 @@ def _client_for(token):
     return current[1]
 
 
+# One refresh at a time. Threads that arrive while one is running don't queue
+# behind it: they use the cached token, which is still good for the minute
+# spotipy refreshes ahead of expiry (or fails fast with a 401 if not).
+_token_lock = threading.Lock()
+#: After a failed refresh (no network, say), wait this long before the next try
+#: instead of retrying on every request.
+REFRESH_RETRY_SECONDS = 15
+_refresh_retry_at = 0.0
+
+
+def _fresh_token():
+    """The access token, refreshed if due. None when there is no login."""
+    global _refresh_retry_at
+    token_info = _cached_login()
+    if not token_info:
+        return None
+    oauth = get_oauth()
+    if not oauth.is_token_expired(token_info) or time.monotonic() < _refresh_retry_at:
+        return token_info
+    if not _token_lock.acquire(blocking=False):
+        return token_info
+    try:
+        # Another thread may have refreshed while we were reading.
+        token_info = _cache_handler().get_cached_token() or token_info
+        if oauth.is_token_expired(token_info):
+            try:
+                token_info = oauth.refresh_access_token(token_info['refresh_token'])
+            except Exception:
+                _refresh_retry_at = time.monotonic() + REFRESH_RETRY_SECONDS
+                raise
+        return token_info
+    finally:
+        _token_lock.release()
+
+
 def get_spotify():
     """Return an authenticated Spotipy client, or None if not authenticated."""
     try:
-        oauth = get_oauth()
-        token_info = oauth.get_cached_token()
+        token_info = _fresh_token()
         if not token_info:
             return None
-        if oauth.is_token_expired(token_info):
-            token_info = oauth.refresh_access_token(token_info['refresh_token'])
         return _client_for(token_info['access_token'])
     except Exception as e:
         logger.error(f"Error getting Spotify client: {e}")
@@ -124,10 +207,9 @@ def get_spotify():
 
 
 def is_authenticated():
+    """Whether there is a Spotify login. Reads the cache only: no network."""
     try:
-        oauth = get_oauth()
-        token_info = oauth.get_cached_token()
-        return token_info is not None
+        return _cached_login() is not None
     except Exception:
         return False
 
@@ -267,6 +349,20 @@ def play_track(track_uri, device_id=None):
         return True, None
     except Exception as e:
         logger.error(f"Error playing track: {e}")
+        return False, str(e)
+
+
+def set_volume(percent, device_id=None):
+    """Set the playing device's volume, 0..100. Some speakers refuse remote
+    volume changes (Spotify answers VOLUME_CONTROL_DISALLOW); the error says so."""
+    sp = get_spotify()
+    if not sp:
+        return False, "Not authenticated with Spotify"
+    try:
+        sp.volume(int(percent), device_id=device_id)
+        return True, None
+    except Exception as e:
+        logger.error(f"Error setting volume: {e}")
         return False, str(e)
 
 
@@ -419,3 +515,57 @@ def get_active_device_id(preferred_device_id=None):
     except Exception as e:
         logger.error(f"Error getting device ID: {e}")
         return None
+
+
+# ---------------------------------------------------------------------------
+# Setlist playlist
+# ---------------------------------------------------------------------------
+# Paths moved in 2026 (/items for a playlist's tracks, /me/playlists to create);
+# the older ones are tried if Spotify refuses the new ones.
+def _first_ok(attempts):
+    last = None
+    for call in attempts:
+        try:
+            return call()
+        except spotipy.SpotifyException as e:
+            last = e
+            if e.http_status not in (403, 404, 405):
+                raise
+    raise last
+
+
+def save_setlist(track_ids, name, description, playlist_id=None):
+    """Write the setlist to a private playlist: the given one, replaced in
+    place, or a new one. Returns (playlist_id, url), or raises."""
+    sp = get_spotify()
+    if not sp:
+        raise RuntimeError('Spotify is not connected')
+    if playlist_id:
+        try:
+            sp._get(f'playlists/{playlist_id}', fields='id')
+        except spotipy.SpotifyException as e:
+            if e.http_status != 404:
+                raise
+            playlist_id = None      # deleted since: make a new one
+    if not playlist_id:
+        body = {'name': name, 'public': False, 'description': description}
+        created = _first_ok([
+            lambda: sp._post('me/playlists', payload=body),
+            lambda: sp._post(f"users/{sp.me()['id']}/playlists", payload=body),
+        ])
+        playlist_id = created['id']
+    else:
+        _first_ok([lambda: sp._put(f'playlists/{playlist_id}', payload={
+            'name': name, 'description': description})])
+    uris = [f'spotify:track:{t}' for t in track_ids]
+    first, rest = uris[:100], [uris[i:i + 100] for i in range(100, len(uris), 100)]
+    for kind in ('items', 'tracks'):
+        try:
+            sp._put(f'playlists/{playlist_id}/{kind}', payload={'uris': first})
+            for chunk in rest:
+                sp._post(f'playlists/{playlist_id}/{kind}', payload={'uris': chunk})
+            break
+        except spotipy.SpotifyException as e:
+            if kind == 'tracks' or e.http_status not in (403, 404, 405):
+                raise
+    return playlist_id, f'https://open.spotify.com/playlist/{playlist_id}'

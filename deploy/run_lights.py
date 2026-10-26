@@ -1,10 +1,11 @@
 """launchd entry point for party-lights (com.partyjukebox.lights).
 
-Run with party-lights' own Python from its directory. With the serial driver
-and the DMX adapter unplugged, party-lights can't open its port and exits, and
-launchd restarts it every 10 s for as long as the Mac is on. Fall back to the
-null driver instead so the web UI and jukebox polling keep running. After
-plugging the adapter in, restart to pick it up:
+Run with party-lights' own Python from its directory. party-lights wraps the
+serial driver so a missing or re-plugged DMX adapter is retried every couple of
+seconds, and the watchdog alerts while it's gone. Older party-lights checkouts
+without that wrapper exit when the port is missing, so for those this falls
+back to the null driver to keep the web UI and jukebox polling up; plugging the
+adapter in then needs a restart:
 
     launchctl kickstart -k gui/$(id -u)/com.partyjukebox.lights
 
@@ -22,7 +23,13 @@ from partylights.config import Settings         # noqa: E402
 settings = Settings.load()
 argv = ['run']
 port = settings.get('dmx.port')
-if settings.get('dmx.driver', 'null') == 'serial' and port and not os.path.exists(port):
+try:
+    import partylights.dmx.reconnect  # noqa: F401,E402
+    retries = True
+except ImportError:
+    retries = False
+if (not retries and settings.get('dmx.driver', 'null') == 'serial' and port
+        and not os.path.exists(port)):
     print(f"{time.strftime('%F %T')} DMX adapter not found at {port}; "
           "running without hardware.", flush=True)
     argv += ['--driver', 'null']

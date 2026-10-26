@@ -8,13 +8,14 @@ import random
 import io
 import logging
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 from flask import (
     Flask, render_template, request, jsonify,
     session, redirect, url_for, send_file
 )
+import requests
 from dotenv import load_dotenv
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -25,6 +26,7 @@ import database as db
 import photos
 import spotify_client as sc
 import queue_manager as qm
+import setlist
 
 def _configure_logging():
     """Log to stderr, or with LOG_FILE set (as under launchd) to a rotating file
@@ -44,6 +46,12 @@ def _configure_logging():
 
 _configure_logging()
 logger = logging.getLogger(__name__)
+
+# `kill -USR1 <pid>` dumps every thread's stack to stderr, for diagnosing a
+# hung server without stopping it.
+import faulthandler
+import signal
+faulthandler.register(signal.SIGUSR1, all_threads=True)
 
 # JUKEBOX_DEV=1 relaxes the startup checks below for local hacking. Never set
 # it on a machine guests can reach.
@@ -157,6 +165,25 @@ def require_host(f):
     return decorated
 
 
+def is_photo_reviewer():
+    """The host, or a guest who logged in with the photos password. Changing
+    that password bumps photos_pw_version, which signs reviewers out."""
+    if session.get('is_host'):
+        return True
+    version = session.get('photo_reviewer')
+    return version is not None and version == db.get_setting('photos_pw_version', '')
+
+
+def require_photo_reviewer(f):
+    """Decorator for photo review: the host or a reviewer."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if is_photo_reviewer():
+            return f(*args, **kwargs)
+        return jsonify({'error': 'Unauthorized'}), 401
+    return decorated
+
+
 def get_user_id_from_request(create=True):
     """The guest's ID, kept in the signed session cookie.
 
@@ -213,6 +240,8 @@ def party_links():
         'party_code': code,
         'invite_url': f'{base}/?p={code}',
         'tv_url': f'{base}/tv?p={code}',
+        'wall_url': f'{base}/wall?p={code}',
+        'recap_url': f'{base}/recap?p={code}',
     }
 
 
@@ -269,15 +298,53 @@ def _resolve_current_track():
 
 
 def _camera_state(user_id):
-    """What the guest's disposable camera shows: on/off and film left tonight."""
+    """What the guest's disposable camera shows: on/off, film left tonight, and
+    when tonight's photos develop."""
     total = int(db.get_setting('camera_shots_per_guest', '24'))
     used = db.count_user_photos(user_id, db.get_setting('party_code', '')) if user_id else 0
+    develop_at = _develop_at()
     return {
         'enabled': db.get_setting('camera_enabled', '1') == '1',
         'shots_total': total,
         'shots_left': max(0, total - used),
         'viewfinder_filter': db.get_setting('camera_viewfinder_filter', '1') == '1',
+        'develop_at': develop_at,
+        'developed': time.time() >= develop_at,
     }
+
+
+# ---------------------------------------------------------------------------
+# Develop at midnight: tonight's photos stay in the darkroom until develop_at,
+# then play as a slideshow on /wall (the TV switches to it on its own).
+# ---------------------------------------------------------------------------
+def _sqlite_to_epoch(text):
+    """SQLite's CURRENT_TIMESTAMP format (UTC) as a Unix time, or None."""
+    try:
+        return datetime.strptime(text, '%Y-%m-%d %H:%M:%S').replace(
+            tzinfo=timezone.utc).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def _develop_at(now=None):
+    """When tonight's photos develop, as a Unix time. The host's pick, else the
+    first local midnight after the party started."""
+    try:
+        return float(db.get_setting('develop_at', ''))
+    except (TypeError, ValueError):
+        pass
+    start = _sqlite_to_epoch(db.get_setting('party_started_at', '')) or (now or time.time())
+    local = datetime.fromtimestamp(start).astimezone()
+    midnight = (local + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return midnight.timestamp()
+
+
+def _wall_statuses():
+    """Which photos the wall shows: approved ones, or every one not rejected
+    when the host has no reviewers on duty."""
+    if db.get_setting('wall_include_pending', '0') == '1':
+        return ('approved', 'pending')
+    return ('approved',)
 
 
 COSTUME_MAX_LEN = 40
@@ -411,12 +478,114 @@ def host():
     return render_template('host.html', ui_theme=_ui_theme())
 
 
+@app.route('/host/m')
+def host_mobile():
+    """The phone version of the host panel: the in-the-moment controls, the
+    lights and the numbers. Setup stays on /host."""
+    return render_template('host_m.html', ui_theme=_ui_theme())
+
+
 @app.route('/tv')
 def tv():
     if 'p' in request.args:
         _accept_party_code(request.args['p'])
         return redirect(url_for('tv'))
     return render_template('tv.html', ui_theme=_ui_theme())
+
+
+@app.route('/wall')
+def wall():
+    """The photo wall: a darkroom countdown, then tonight's photos as a slideshow."""
+    if 'p' in request.args:
+        _accept_party_code(request.args['p'])
+        return redirect(url_for('wall'))
+    return render_template('wall.html', ui_theme=_ui_theme())
+
+
+@app.route('/api/wall')
+@require_party
+def api_wall():
+    """Countdown until develop_at; after it, the photos the wall may show."""
+    now = time.time()
+    develop_at = _develop_at(now)
+    party = db.get_setting('party_code', '')
+    developed = now >= develop_at
+    shots = db.list_photos(party_code=party)
+    out = {
+        'develop_at': develop_at,
+        'now': now,
+        'developed': developed,
+        'shots': len(shots),
+        'photos': [],
+    }
+    if developed:
+        allowed = _wall_statuses()
+        out['photos'] = [
+            {'id': p['id'], 'by': p['nickname'], 'w': p['width'], 'h': p['height']}
+            for p in shots if p['status'] in allowed
+        ]
+    track, _, _ = _resolve_current_track()
+    out['now_playing'] = ({k: track.get(k) for k in ('track_name', 'artist', 'album_art')}
+                          if track else None)
+    return jsonify(out)
+
+
+@app.route('/api/wall/photo/<int:photo_id>')
+@require_party
+def api_wall_photo(photo_id):
+    """One developed photo, for anyone at tonight's party."""
+    photo = db.get_photo(photo_id)
+    if (not photo or photo['party_code'] != db.get_setting('party_code', '')
+            or time.time() < _develop_at() or photo['status'] not in _wall_statuses()):
+        return jsonify({'error': 'Photo not found'}), 404
+    try:
+        path = photos.path_for(photo['filename'])
+    except photos.PhotoError:
+        return jsonify({'error': 'Photo not found'}), 404
+    if not os.path.exists(path):
+        return jsonify({'error': 'Photo file is missing'}), 404
+    res = send_file(path, mimetype='image/jpeg')
+    # The slideshow loops, so let the browser keep it; never a shared cache.
+    res.headers['Cache-Control'] = 'private, max-age=3600'
+    return res
+
+
+@app.route('/recap')
+def recap():
+    """The night in one page: setlist, stats, the costume winner, the photos."""
+    if 'p' in request.args:
+        _accept_party_code(request.args['p'])
+        return redirect(url_for('recap'))
+    return render_template('recap.html', ui_theme=_ui_theme())
+
+
+@app.route('/api/recap')
+@require_party
+def api_recap():
+    party = db.get_setting('party_code', '')
+    since = _party_since()
+    developed = time.time() >= _develop_at()
+    allowed = _wall_statuses()
+    plays = db.get_plays(party)
+    costume = _costume_tv()
+    return jsonify({
+        'title': setlist._name().replace('Party setlist · ', ''),
+        'stats': db.get_party_stats(since, party),
+        'leaderboards': db.get_leaderboards(since, party),
+        'setlist': [
+            {k: p[k] for k in ('spotify_track_id', 'track_name', 'artist', 'album_art',
+                               'played_at', 'requested_by', 'hearts')}
+            for p in plays
+        ],
+        'setlist_url': db.get_setting('setlist_playlist_url', '') or None,
+        'costume': costume.get('results') if costume.get('phase') == 'closed' else None,
+        'developed': developed,
+        'develop_at': _develop_at(),
+        'photos': ([{'id': p['id'], 'by': p['nickname']}
+                    for p in db.list_photos(party_code=party) if p['status'] in allowed]
+                   if developed else []),
+        'ui_theme': _ui_theme(),
+    })
 
 
 @app.route('/api/join', methods=['POST'])
@@ -500,6 +669,33 @@ def host_logout():
 @app.route('/api/host/auth_check')
 def host_auth_check():
     return jsonify({'authenticated': bool(session.get('is_host'))})
+
+
+@app.route('/api/photos/login', methods=['POST'])
+@limiter.limit('5 per minute;30 per hour', key_func=get_remote_address)
+def photos_login():
+    """Photo review login. Takes the photos password, or the host password so
+    the host can use the same page."""
+    password = (request.get_json() or {}).get('password', '')
+    if db.check_host_password(password):
+        session['is_host'] = True
+    elif db.check_photos_password(password):
+        session['photo_reviewer'] = db.get_setting('photos_pw_version', '')
+    else:
+        return jsonify({'error': 'Invalid password'}), 401
+    return jsonify({'success': True, 'is_host': bool(session.get('is_host'))})
+
+
+@app.route('/api/photos/logout', methods=['POST'])
+def photos_logout():
+    session.pop('photo_reviewer', None)
+    return jsonify({'success': True})
+
+
+@app.route('/api/photos/auth_check')
+def photos_auth_check():
+    return jsonify({'authenticated': is_photo_reviewer(),
+                    'is_host': bool(session.get('is_host'))})
 
 
 # ---------------------------------------------------------------------------
@@ -601,9 +797,19 @@ def api_now():
     needed and nothing beyond the track; same shape as /api/status's
     current_track. Served from the playback snapshot, so polling it is cheap."""
     track, _, _ = _resolve_current_track()
-    return jsonify({'current_track': (
-        {k: track.get(k) for k in ('track_id', 'track_name', 'artist', 'is_playing')}
-        if track else None)})
+    if not track:
+        return jsonify({'current_track': None})
+    out = {k: track.get(k) for k in ('track_id', 'track_name', 'artist', 'is_playing')}
+    # Where the song is right now, for party-lights' per-song shows: Spotify's
+    # position when the snapshot was taken, carried forward by the snapshot's
+    # age while it plays. Good to about a tenth of a second.
+    age = qm.playback_age()
+    if track.get('progress_ms') is not None and age is not None:
+        moved = age if track.get('is_playing') else 0.0
+        out['position_s'] = round(track['progress_ms'] / 1000 + moved, 3)
+    if track.get('requested_by_nickname'):
+        out['requested_by_nickname'] = track['requested_by_nickname']
+    return jsonify({'current_track': out})
 
 
 @app.route('/healthz')
@@ -1039,11 +1245,12 @@ def api_tv():
         'current_track': current_track,
         'reactions': reactions,
         'queue': queue,
-        'stats': db.get_party_stats(),
-        'leaderboards': db.get_leaderboards(),
+        'stats': db.get_party_stats(_party_since(), db.get_setting('party_code', '')),
+        'leaderboards': db.get_leaderboards(_party_since(), db.get_setting('party_code', '')),
         'recent_reactions': db.get_recent_reactions(20),
         'ui_theme': _ui_theme(),
         'costume': _costume_tv(),
+        'developed': time.time() >= _develop_at(),
     })
 
 
@@ -1060,6 +1267,36 @@ def api_host_skip():
 
     qm.advance_to_next_pending()
     return jsonify({'success': True})
+
+
+@app.route('/api/host/volume')
+@require_host
+def api_host_volume():
+    """The party speaker's volume, from the playback snapshot (no Spotify call).
+    volume is None when nothing is playing or the device doesn't report one."""
+    device = (qm.get_cached_playback() or {}).get('device') or {}
+    return jsonify({'volume': device.get('volume_percent'), 'device': device.get('name')})
+
+
+@app.route('/api/host/volume', methods=['POST'])
+@require_host
+def api_host_volume_set():
+    """{"volume": 0..100} on the device that's playing."""
+    data = request.get_json() or {}
+    try:
+        volume = round(float(data.get('volume')))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'volume must be a number 0..100'}), 400
+    if not 0 <= volume <= 100:
+        return jsonify({'error': 'volume must be a number 0..100'}), 400
+    device = (qm.get_cached_playback() or {}).get('device') or {}
+    ok, err = sc.set_volume(volume, device_id=device.get('id'))
+    if not ok:
+        if 'VOLUME_CONTROL_DISALLOW' in (err or ''):
+            return jsonify({'error': "This speaker doesn't let Spotify change its volume."}), 409
+        return jsonify({'error': "Spotify didn't change the volume."}), 502
+    qm.invalidate_playback_cache()
+    return jsonify({'volume': volume, 'device': device.get('name')})
 
 
 @app.route('/api/host/ban', methods=['POST'])
@@ -1119,6 +1356,15 @@ def api_host_settings():
             db.set_host_password(pw)
             session['is_host'] = True  # keep session valid after pw change
 
+    if 'photos_password' in data:
+        pw = (data['photos_password'] or '').strip()
+        if pw:
+            if len(pw) < 6:
+                return jsonify({'error': 'Photos password must be at least 6 characters.'}), 400
+            if db.check_host_password(pw):
+                return jsonify({'error': 'Pick a photos password different from the host password.'}), 400
+            db.set_photos_password(pw)
+
     if 'party_url' in data:
         url = data['party_url'].strip()
         if url:
@@ -1141,6 +1387,24 @@ def api_host_settings():
 
     if 'camera_viewfinder_filter' in data:
         db.set_setting('camera_viewfinder_filter', '1' if data['camera_viewfinder_filter'] else '0')
+
+    if data.get('develop_now'):
+        db.set_setting('develop_at', str(time.time()))
+    elif 'develop_at' in data:
+        raw = data['develop_at']
+        if raw in (None, ''):
+            db.set_setting('develop_at', '')        # back to midnight
+        else:
+            try:
+                when = float(raw)
+            except (TypeError, ValueError):
+                return jsonify({'error': 'Develop time must be a Unix time.'}), 400
+            if abs(when - time.time()) > 7 * 86400:
+                return jsonify({'error': 'Pick a develop time within a week.'}), 400
+            db.set_setting('develop_at', str(when))
+
+    if 'wall_include_pending' in data:
+        db.set_setting('wall_include_pending', '1' if data['wall_include_pending'] else '0')
 
     if 'camera_shots_per_guest' in data:
         try:
@@ -1242,6 +1506,9 @@ def api_host_new_party():
     stats = db.start_new_party(clear_users=bool(data.get('clear_users')))
     db.rotate_party_code()
     db.set_setting('costume_phase', 'off')
+    db.set_setting('party_started_at', _sqlite_utc(time.time()))
+    db.set_setting('develop_at', '')     # tonight's photos develop at the next midnight
+    db.set_setting('setlist_playlist_url', '')
     session['party_code'] = db.get_setting('party_code')
     qm.resume_party()
     return jsonify({'success': True, **stats, **party_links()})
@@ -1313,15 +1580,22 @@ def api_host_camera():
         'enabled': db.get_setting('camera_enabled', '1') == '1',
         'shots_per_guest': int(db.get_setting('camera_shots_per_guest', '24')),
         'viewfinder_filter': db.get_setting('camera_viewfinder_filter', '1') == '1',
+        'develop_at': _develop_at(),
+        'develop_set': bool(db.get_setting('develop_at', '')),
+        'developed': time.time() >= _develop_at(),
+        'wall_include_pending': db.get_setting('wall_include_pending', '0') == '1',
+        'wall_url': party_links()['wall_url'],
         'current_party': db.get_setting('party_code', ''),
         'parties': db.photo_parties(),
     })
 
 
 @app.route('/api/host/photos')
-@require_host
+@require_photo_reviewer
 def api_host_photos():
-    party = request.args.get('party') or db.get_setting('party_code', '')
+    current = db.get_setting('party_code', '')
+    # Reviewers only see tonight; the host can browse earlier parties.
+    party = (request.args.get('party') or current) if session.get('is_host') else current
     status = request.args.get('status') or None
     if status and status not in db.PHOTO_STATUSES:
         return jsonify({'error': 'Unknown status'}), 400
@@ -1335,10 +1609,12 @@ def api_host_photos():
 
 
 @app.route('/api/host/photos/<int:photo_id>/image')
-@require_host
+@require_photo_reviewer
 def api_host_photo_image(photo_id):
     photo = db.get_photo(photo_id)
     if not photo:
+        return jsonify({'error': 'Photo not found'}), 404
+    if not session.get('is_host') and photo['party_code'] != db.get_setting('party_code', ''):
         return jsonify({'error': 'Photo not found'}), 404
     try:
         path = photos.path_for(photo['filename'])
@@ -1353,7 +1629,7 @@ def api_host_photo_image(photo_id):
 
 
 @app.route('/api/host/photos/review', methods=['POST'])
-@require_host
+@require_photo_reviewer
 def api_host_photo_review():
     """Approve, reject or un-review photos: {"ids": [...], "status": "approved"}."""
     data = request.get_json() or {}
@@ -1363,6 +1639,14 @@ def api_host_photo_review():
         return jsonify({'error': 'Status must be pending, approved or rejected.'}), 400
     if not isinstance(ids, list) or not ids:
         return jsonify({'error': 'No photos selected.'}), 400
+    if not session.get('is_host'):
+        # Reviewers can only touch tonight's photos.
+        try:
+            tonight = {p['id'] for p in db.list_photos(party_code=db.get_setting('party_code', ''))}
+            if not {int(i) for i in ids} <= tonight:
+                return jsonify({'error': 'Photo not found'}), 404
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Photo IDs must be numbers.'}), 400
     try:
         changed = db.set_photo_status(ids, status)
     except (TypeError, ValueError):
@@ -1434,6 +1718,151 @@ def api_host_demo():
         }))
 
     return jsonify({'success': True})
+
+
+# ---------------------------------------------------------------------------
+# Party lights (host-only proxy)
+# ---------------------------------------------------------------------------
+# party-lights has no login and only listens on the home network, so the
+# host's phone reaches it through here, behind the host session. Only the
+# handful of controls below are forwarded, never an arbitrary path.
+PARTY_LIGHTS_URL = os.environ.get('PARTY_LIGHTS_URL', 'http://127.0.0.1:5055').rstrip('/')
+LIGHTS_TIMEOUT = 2
+
+# Mirrors party-lights' PRESETS (engine/cues.py), calm to wild: name, label,
+# and the look + palette it sets, so the phone can show which one is on.
+LIGHT_PRESETS = [
+    ('seance', 'Séance', 'uv', 'deep-uv'),
+    ('graveyard', 'Graveyard', 'drift', 'graveyard'),
+    ('halloween-smooth', 'Smooth', 'swell', 'halloween-deep'),
+    ('blood-moon', 'Blood Moon', 'wash', 'blood-moon'),
+    ('cauldron', 'Cauldron', 'ripple', 'witch'),
+    ('monster-mash', 'Monster Mash', 'unison', 'candy-corn'),
+    ('toxic', 'Toxic', 'mirror', 'acid'),
+    ('fright-night', 'Fright Night', 'knockout', 'blood-moon'),
+]
+_PRESET_NAMES = {p[0] for p in LIGHT_PRESETS}
+
+
+def _lights_call(method, path, body=None):
+    res = requests.request(method, PARTY_LIGHTS_URL + path, json=body, timeout=LIGHTS_TIMEOUT)
+    return res.status_code, res.json()
+
+
+def _lights_state():
+    """The few things the phone shows, or {'online': False}."""
+    try:
+        status, data = _lights_call('GET', '/api/state')
+    except Exception:
+        return {'online': False}
+    if status != 200:
+        return {'online': False}
+    st, dmx = data.get('state') or {}, data.get('dmx') or {}
+    preset = next((p[0] for p in LIGHT_PRESETS
+                   if st.get('mode') == 'manual'
+                   and (st.get('look'), st.get('palette')) == (p[2], p[3])), None)
+    return {
+        'online': True,
+        'mode': st.get('mode'),
+        'blackout': bool(st.get('blackout')),
+        'master': st.get('master'),
+        'vibe': st.get('vibe'),
+        'look': st.get('look'),
+        'palette': st.get('palette'),
+        'preset': preset,
+        'fps': dmx.get('fps'),
+        'target_fps': dmx.get('target_fps'),
+        'late': dmx.get('late'),
+        'presets': [{'name': p[0], 'label': p[1]} for p in LIGHT_PRESETS],
+    }
+
+
+@app.route('/api/host/lights')
+@require_host
+def api_host_lights():
+    return jsonify(_lights_state())
+
+
+@app.route('/api/host/lights', methods=['POST'])
+@require_host
+def api_host_lights_control():
+    """{"action": "blackout"} toggles blackout. Others: "auto" (back to the
+    automatic show), "preset" + "name", "master" + "value" 0..1, "vibe" +
+    "value" 0..1 (calm to wild)."""
+    data = request.get_json() or {}
+    action = data.get('action')
+    if action == 'blackout':
+        call = ('POST', '/api/cue/blackout', None)
+    elif action == 'auto':
+        call = ('POST', '/api/cue/resume-auto', None)
+    elif action == 'preset':
+        name = data.get('name')
+        if name not in _PRESET_NAMES:
+            return jsonify({'error': 'Unknown preset.'}), 400
+        call = ('POST', f'/api/cue/preset/{name}', None)
+    elif action in ('master', 'vibe'):
+        try:
+            value = float(data.get('value'))
+        except (TypeError, ValueError):
+            return jsonify({'error': f'{action} must be a number 0..1'}), 400
+        if not 0 <= value <= 1:
+            return jsonify({'error': f'{action} must be a number 0..1'}), 400
+        call = ('POST', f'/api/{action}', {action: value})
+    else:
+        return jsonify({'error': 'Unknown lights action.'}), 400
+
+    try:
+        status, result = _lights_call(*call)
+    except Exception:
+        return jsonify({'error': "Can't reach the lights."}), 502
+    if status != 200:
+        return jsonify({'error': result.get('error') or 'The lights refused that.'}), 502
+    return jsonify(_lights_state())
+
+
+# ---------------------------------------------------------------------------
+# Party stats (host phone)
+# ---------------------------------------------------------------------------
+ACTIVE_WINDOW_SECONDS = 15 * 60
+# With no new party started, "tonight" means the last this many hours.
+DEFAULT_PARTY_HOURS = 12
+
+
+def _sqlite_utc(ts):
+    """A Unix time in SQLite's CURRENT_TIMESTAMP format, for comparing with it."""
+    return time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(ts))
+
+
+def _party_since(now=None):
+    """When tonight's party started, in SQLite's timestamp format: the last
+    "Start new party", but never more than DEFAULT_PARTY_HOURS ago."""
+    fallback = _sqlite_utc((now or time.time()) - DEFAULT_PARTY_HOURS * 3600)
+    return max(db.get_setting('party_started_at', '') or fallback, fallback)
+
+
+@app.route('/api/host/setlist', methods=['POST'])
+@require_host
+def api_host_setlist():
+    """Save tonight's setlist to a private Spotify playlist, or update the one
+    saved earlier tonight. Safe to press as often as you like."""
+    try:
+        result = setlist.save_tonight()
+    except setlist.NothingPlayed as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error("Couldn't save the setlist: %s", e)
+        return jsonify({'error': f"Spotify didn't take the setlist: {e}"}), 502
+    return jsonify({'success': True, **result})
+
+
+@app.route('/api/host/stats')
+@require_host
+def api_host_stats():
+    now = time.time()
+    since = _party_since(now)
+    stats = db.host_stats(db.get_setting('party_code', ''), since,
+                          _sqlite_utc(now - ACTIVE_WINDOW_SECONDS))
+    return jsonify({**stats, 'since': since})
 
 
 # ---------------------------------------------------------------------------

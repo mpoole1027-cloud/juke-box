@@ -53,8 +53,10 @@ def shoot(client, shot_id='shot-0001', data=None):
 def test_shot_is_stored_and_counted(app_module, db):
     c = guest_client(app_module)
     before = c.get('/api/status').get_json()['camera']
+    develop = {k: before.pop(k) for k in ('develop_at', 'developed')}
     assert before == {'enabled': True, 'shots_total': 24, 'shots_left': 24,
                       'viewfinder_filter': True}
+    assert develop['developed'] is False
 
     res = shoot(c)
     assert res.status_code == 200 and res.get_json()['shots_left'] == 23

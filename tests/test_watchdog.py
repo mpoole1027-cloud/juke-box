@@ -82,6 +82,15 @@ def test_lights_problems():
     assert keys(snap) == {'lights:fps', 'lights:no_dmx', 'lights:deaf'}
 
 
+def test_unplugged_dmx_is_critical_and_quick():
+    snap = healthy_snap()
+    snap['lights']['dmx']['link'] = {'connected': False, 'error': 'no such file'}
+    [p] = wd.check(snap)
+    assert (p.key, p.severity, p.grace) == ('lights:dmx_unplugged', wd.CRITICAL, 15)
+    snap['lights']['dmx']['link']['connected'] = True
+    assert keys(snap) == set()
+
+
 def test_silence_between_songs_is_fine():
     snap = healthy_snap()
     snap['lights']['music']['silent'] = True
@@ -141,6 +150,30 @@ def test_counter_events():
     }
 
 
+def test_tracker_records_how_long_resolved_problems_lasted():
+    t = wd.Tracker()
+    down = [wd.Problem('a', wd.CRITICAL, 'a', grace=0)]
+    t.update(down, 100)
+    t.update(down, 400)
+    t.update([], 460)
+    assert t.lasted == {'a': 360}
+    t.update([], 475)
+    assert t.lasted == {}
+
+
+def test_test_mode_sends_only_new_criticals_and_long_recoveries():
+    crit = wd.Problem('a', wd.CRITICAL, 'Jukebox down.')
+    blip = wd.Problem('b', wd.CRITICAL, 'Tunnel blip.')
+    warn = wd.Problem('c', wd.WARNING, 'On battery.')
+    new, reminders, resolved, events = wd.for_testing(
+        [crit, warn], [blip, crit, warn],
+        {'a': wd.TEST_RECOVERY_MIN, 'b': 60, 'c': 9999})
+    assert [p.key for p in new] == ['a']
+    assert reminders == [] and events == []
+    assert [p.key for p in resolved] == ['a']
+    assert wd.compose(new, reminders, [], events, '') == '🚨 Jukebox down.'
+
+
 def test_compose_mentions_only_for_critical():
     crit = wd.Problem('a', wd.CRITICAL, 'Jukebox down.')
     warn = wd.Problem('b', wd.WARNING, 'On battery.')
@@ -182,3 +215,53 @@ def test_post_discord_sends_json_with_mentions_allowed():
     server.server_close()
     assert got[0]['content'] == 'hi'
     assert 'everyone' in got[0]['allowed_mentions']['parse']
+
+
+# ── Tunnel auto-restart ──────────────────────────────────────────────────────
+
+DOWN = ('https://pooleparty.fun', False, 'answered 530')
+UP = ('https://pooleparty.fun', True, 'answered 200')
+
+
+def medic(internet=True):
+    restarts = []
+    m = wd.TunnelMedic(probe=lambda: internet, restart=lambda: restarts.append(1) or True)
+    return m, restarts
+
+
+def test_short_blip_is_left_alone():
+    m, restarts = medic()
+    assert m.observe(DOWN, 0) is None
+    assert m.observe(UP, 60) is None
+    assert m.observe(DOWN, 120) is None
+    assert m.observe(DOWN, 120 + wd.TUNNEL_STUCK_SECONDS - 1) is None
+    assert restarts == []
+
+
+def test_stuck_tunnel_is_restarted_once_per_cooldown():
+    m, restarts = medic()
+    m.observe(DOWN, 0)
+    assert 'restarted' in m.observe(DOWN, wd.TUNNEL_STUCK_SECONDS)
+    assert m.observe(DOWN, wd.TUNNEL_STUCK_SECONDS + 60) is None
+    assert m.observe(DOWN, wd.TUNNEL_STUCK_SECONDS + wd.TUNNEL_RESTART_COOLDOWN)
+    assert len(restarts) == 2
+
+
+def test_no_restart_when_the_internet_is_down_too():
+    m, restarts = medic(internet=False)
+    m.observe(DOWN, 0)
+    assert m.observe(DOWN, wd.TUNNEL_STUCK_SECONDS * 3) is None
+    assert restarts == []
+
+
+def test_autorestart_can_be_switched_off():
+    m, restarts = medic()
+    m.observe(DOWN, 0, enabled=False)
+    assert m.observe(DOWN, wd.TUNNEL_STUCK_SECONDS * 2, enabled=False) is None
+    assert restarts == []
+
+
+def test_unchecked_polls_dont_count():
+    m, restarts = medic()
+    assert m.observe(None, 0) is None
+    assert m.down_since is None

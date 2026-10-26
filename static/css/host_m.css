@@ -1,0 +1,325 @@
+/* ================================================================
+   host_m.css  –  Host panel for a phone (/host/m)
+   Builds on jukebox.css tokens, so the Halloween looks still apply.
+   ================================================================ */
+
+body.hm { font-size: 15px; }
+
+.hm .card { padding: 14px; margin-bottom: 12px; }
+.hm h2 {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.hm-dim { color: var(--text-dim); font-weight: 400; }
+.hm-hint { color: var(--text-dim); font-size: 0.82rem; margin-bottom: 10px; }
+.hm-center { text-align: center; }
+.hm-link { color: var(--accent); font-size: 0.82rem; }
+
+.hm-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.hm-row > .btn { flex: 1 1 0; min-height: 44px; }
+.hm-row-center { justify-content: center; }
+.hm-row-center > .btn { flex: 0 0 auto; }
+.hm-big { width: 100%; min-height: 52px; font-size: 1rem; }
+
+.hm-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.hm-card-head h2 { margin-bottom: 0; }
+
+/* ── Header + health strip ── */
+.hm-top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  padding: calc(8px + env(safe-area-inset-top)) 16px 8px;
+}
+.hm-title { display: flex; align-items: baseline; justify-content: space-between; }
+.hm-title h1 { font-family: var(--font-display); font-size: 1.3rem; font-weight: 600; }
+.hm-health { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.hm-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.75rem;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.hm-pill i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.hm-pill.ok i { background: var(--success); }
+.hm-pill.warn i { background: var(--warning); }
+.hm-pill.bad { color: var(--danger); border-color: var(--danger); }
+.hm-pill.bad i { background: var(--danger); }
+.hm-health-msg {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: var(--danger);
+}
+
+.hm-main {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 12px 16px calc(84px + env(safe-area-inset-bottom));
+}
+
+/* ── Bottom tabs ── */
+.hm-tabs {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  background: var(--card);
+  border-top: 1px solid var(--border-dark);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.hm-tabs button {
+  background: none;
+  border: 0;
+  padding: 8px 0 10px;
+  min-height: 56px;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+}
+.hm-tabs button span { font-size: 1.25rem; line-height: 1; }
+.hm-tabs button[aria-selected="true"] { color: var(--primary); font-weight: 600; }
+
+/* ── Banners ── */
+.hm-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  background: var(--card-alt);
+  font-size: 0.85rem;
+}
+.hm-banner.hidden { display: none; }
+.hm-banner span { flex: 1; }
+.hm-banner-warn { color: var(--danger); border: 1px solid var(--danger); }
+
+/* ── Lists (queue, search, guests, tally) ── */
+.hm-list { display: flex; flex-direction: column; }
+.hm-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  min-height: 52px;
+}
+.hm-item:first-child { border-top: 0; }
+.hm-item img, .hm-art {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--card-alt);
+}
+.hm-item-main { flex: 1; min-width: 0; }
+.hm-item-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+.hm-item-sub {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hm-item .btn { min-height: 40px; min-width: 44px; }
+.hm-num { width: 22px; color: var(--text-dim); text-align: center; flex-shrink: 0; }
+.hm-votes { color: var(--primary); font-weight: 700; }
+.hm-empty { color: var(--text-dim); font-style: italic; font-size: 0.85rem; padding: 6px 0; }
+.hm-banned .hm-item-title { color: var(--danger); text-decoration: line-through; }
+
+.hm-move {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hm-move button {
+  width: 36px;
+  height: 24px;
+  border: 1px solid var(--border-dark);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+.hm-move button:disabled { opacity: 0.25; }
+
+/* ── Now playing ── */
+.hm-now-track {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  min-height: 64px;
+}
+.hm-now-track img { width: 64px; height: 64px; border-radius: 8px; object-fit: cover; }
+.hm-now-title { font-size: 1.05rem; font-weight: 700; }
+.hm-now-artist { color: var(--text-dim); font-size: 0.88rem; }
+
+/* ── Lights ── */
+.hm-blackout {
+  display: block;
+  width: 100%;
+  min-height: 84px;
+  margin-bottom: 8px;
+  border-radius: 16px;
+  border: 2px solid var(--text);
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-size: 1.3rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+.hm-blackout[aria-pressed="true"] {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+#lights-status { margin-bottom: 12px; font-size: 0.82rem; }
+#auto-btn { margin-bottom: 12px; }
+.hm-presets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.hm-presets button {
+  min-height: 52px;
+  border-radius: 10px;
+  border: 1px solid var(--border-dark);
+  background: var(--card-alt);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.hm-presets button[aria-pressed="true"] {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.hm-slider { display: block; margin: 6px 0 14px; }
+.hm-slider > span:first-child {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.hm-slider input[type="range"] { width: 100%; height: 36px; accent-color: var(--primary); }
+.hm-slider-ends {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+/* ── Party ── */
+.hm-qr {
+  width: 200px;
+  height: 200px;
+  margin: 4px auto 8px;
+  display: block;
+  image-rendering: pixelated;
+  background: #fff;
+}
+.hm-code { margin-bottom: 10px; color: var(--text-dim); }
+.hm-code b { color: var(--text); letter-spacing: 0.12em; font-size: 1.1rem; }
+
+.hm-switch { position: relative; width: 50px; height: 30px; flex-shrink: 0; }
+.hm-switch input { opacity: 0; width: 0; height: 0; }
+.hm-switch span {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--border-dark);
+  transition: background 0.15s;
+}
+.hm-switch span::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s;
+}
+.hm-switch input:checked + span { background: var(--success); }
+.hm-switch input:checked + span::after { transform: translateX(20px); }
+
+/* ── Stats ── */
+.hm-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.hm-tile {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+}
+.hm-tile b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.7rem;
+  line-height: 1.1;
+}
+.hm-tile span { font-size: 0.78rem; color: var(--text-dim); }
+
+/* ── Confirm sheet ── */
+.hm-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+}
+.hm-sheet.hidden { display: none; }
+.hm-sheet-box {
+  width: 100%;
+  background: var(--card);
+  border-radius: 16px 16px 0 0;
+  padding: 20px 16px calc(16px + env(safe-area-inset-bottom));
+}
+.hm-sheet-box p { margin-bottom: 16px; font-size: 1rem; line-height: 1.4; }
+
+.hm .toast-container { bottom: calc(76px + env(safe-area-inset-bottom)); }

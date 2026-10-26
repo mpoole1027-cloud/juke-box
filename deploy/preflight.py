@@ -4,7 +4,7 @@
     .venv/bin/python deploy/preflight.py
 
 Checks the jukebox, Spotify, the public link, the Mac's audio routing, the
-light rig and the power situation, and says what to fix. Exits 1 if anything
+light rig, power, network, disk and alerts, and says what to fix. Exits 1 if anything
 would stop the party. Read-only: it never changes playback or settings.
 """
 import glob
@@ -148,9 +148,14 @@ def check_spotify_devices():
     except Exception as e:
         warn(f'Skipped ({e})')
         return
+    if not db.get_setting('fallback_playlist_id'):
+        warn('No fallback playlist, so the music stops whenever the queue runs dry. '
+             'Set one in host Settings (the Halloween playlist, say).')
     devices = sc.list_devices()
     if not devices:
-        bad('No Spotify Connect device online. Open Spotify on the party Mac.')
+        bad('No Spotify Connect device online. Open Spotify on the party Mac. If it is '
+            "open and still missing (lid shut, screen asleep), wake it: osascript -e "
+            "'tell application \"Spotify\" to play' -e 'tell application \"Spotify\" to pause'")
         return
     pinned = db.get_setting('preferred_device_id') or ''
     names = ', '.join(d['name'] for d in devices)
@@ -241,13 +246,82 @@ def check_lights():
                     f"party-lights/config/settings.yaml to http://localhost:{PORT}")
         else:
             warn(f'party-lights answered {status}')
+        dmx = ((state or {}).get('dmx') or {}) if status == 200 else {}
+        link = dmx.get('link')
+        driver = dmx.get('driver') or ''
+        if link is not None and not link.get('connected'):
+            bad("The DMX interface isn't answering, so the fixtures are dark. Check the "
+                "ENTTEC's USB cable; party-lights reconnects on its own.")
+        elif 'null' in driver:
+            bad('party-lights is running without DMX (null driver). Plug the ENTTEC in, then '
+                'launchctl kickstart -k gui/$(id -u)/com.partyjukebox.lights')
+        elif dmx:
+            ok(f'DMX output: {driver}')
+        target, fps = dmx.get('target_fps') or 40, dmx.get('fps')
+        if fps is not None and fps < 0.9 * target:
+            bad(f'Lights are stuttering: {fps:.0f} of {target:.0f} fps. Is the Mac asleep '
+                'or the lid shut?')
+        elif fps is not None:
+            ok(f'DMX at {fps:.1f} fps')
     except Exception:
         warn(f'party-lights is not running on {LIGHTS_URL} (fine if you\'re not using lights)')
     ports = glob.glob('/dev/cu.usbserial-*')
     if ports:
         ok(f'DMX interface plugged in ({", ".join(ports)})')
     else:
-        warn('No DMX interface found (/dev/cu.usbserial-*), so party-lights runs without hardware. After plugging it in: launchctl kickstart -k gui/$(id -u)/com.partyjukebox.lights')
+        warn('No DMX interface found (/dev/cu.usbserial-*). Plug the ENTTEC in.')
+
+
+def check_network():
+    print('Network')
+    try:
+        route = subprocess.run(['route', '-n', 'get', 'default'], capture_output=True,
+                               text=True, timeout=5).stdout
+        iface = next((ln.split(':', 1)[1].strip() for ln in route.splitlines()
+                      if ln.strip().startswith('interface:')), '')
+        ports = subprocess.run(['networksetup', '-listallhardwareports'], capture_output=True,
+                               text=True, timeout=10).stdout
+    except Exception as e:
+        warn(f'Skipped ({e})')
+        return
+    wifi = set()
+    lines = ports.splitlines()
+    for i, ln in enumerate(lines):
+        if ln.startswith('Hardware Port:') and 'Wi-Fi' in ln and i + 1 < len(lines):
+            wifi.add(lines[i + 1].split(':', 1)[-1].strip())
+    if not iface:
+        bad('No default route: the Mac is offline.')
+    elif iface in wifi:
+        warn(f"Online over Wi-Fi ({iface}). This Mac's Wi-Fi stalls for ~20 s at a time "
+             'and drops the tunnel; plug in Ethernet for the party.')
+    else:
+        ok(f'Online over {iface} (wired)')
+
+
+def check_logs_and_disk():
+    print('Disk and logs')
+    import shutil
+    free = shutil.disk_usage(ROOT).free / 1e9
+    if free < 5:
+        bad(f'Only {free:.1f} GB free. Photos and logs need room; clear some space.')
+    else:
+        ok(f'{free:.0f} GB free')
+    for name in sorted(os.listdir(os.path.join(ROOT, 'logs'))):
+        path = os.path.join(ROOT, 'logs', name)
+        if os.path.isfile(path) and os.path.getsize(path) > 200e6:
+            warn(f'logs/{name} is {os.path.getsize(path) / 1e6:.0f} MB.')
+
+
+def check_alerts():
+    print('Alerts')
+    if not os.environ.get('PARTY_ALERTS_WEBHOOK'):
+        warn('PARTY_ALERTS_WEBHOOK is not set, so nobody hears about problems.')
+    elif os.environ.get('PARTY_ALERTS_MODE', '').strip().lower() == 'test':
+        warn('PARTY_ALERTS_MODE=test: no mentions or reminders. Set it to live for the party.')
+    else:
+        ok('Watchdog alerts are live')
+    if os.path.exists(os.path.join(ROOT, 'logs', 'watchdog.mute')):
+        bad('logs/watchdog.mute exists, so alerts are muted. Delete it.')
 
 
 def check_power():
@@ -262,6 +336,14 @@ def check_power():
         ok('On AC power, so the Mac stays awake')
     else:
         warn('On battery. Plug in: the Mac may sleep on battery and stop the party.')
+    try:
+        lid = subprocess.run(['ioreg', '-r', '-k', 'AppleClamshellState', '-d', '1'],
+                             capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        lid = ''
+    if '"AppleClamshellState" = Yes' in lid:
+        warn('The lid is shut. With it closed the Mac runs in DarkWake and the lights '
+             'stutter; open it (the screen can sleep).')
 
 
 def main():
@@ -273,6 +355,9 @@ def main():
     check_audio()
     check_lights()
     check_power()
+    check_network()
+    check_logs_and_disk()
+    check_alerts()
     print()
     if failures:
         print(f'{failures} problem(s) to fix before guests arrive.')

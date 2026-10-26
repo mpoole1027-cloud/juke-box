@@ -12,6 +12,8 @@ const Camera = (() => {
 
   let enabled = false;
   let serverShotsLeft = 0;
+  let developAt = null;      // Unix time tonight's photos develop
+  let developed = false;
   let stream = null;
   let facing = 'environment';
   let winding = false;
@@ -142,6 +144,13 @@ const Camera = (() => {
     return Math.max(0, serverShotsLeft - pendingCount);
   }
 
+  function developLabel() {
+    if (developAt == null) return 'later tonight';
+    const d = new Date(developAt * 1000);
+    if (d.getHours() === 0 && d.getMinutes() === 0) return 'at midnight';
+    return 'at ' + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+
   function render() {
     const card = $('camera-card');
     if (!card) return;
@@ -157,9 +166,14 @@ const Camera = (() => {
     if (pendingCount > 0) {
       status.textContent = `${pendingCount} shot${pendingCount === 1 ? '' : 's'} on the way to the darkroom…`;
     } else {
-      status.textContent = left <= 0
-        ? "That's the whole roll! Photos get developed after the party."
-        : 'Every shot is a surprise. Photos get developed after the party.';
+      const when = developLabel();
+      if (developed) {
+        status.innerHTML = 'Tonight\'s photos have developed! <a href="/wall">See the photo wall →</a>';
+      } else {
+        status.textContent = left <= 0
+          ? `That's the whole roll! Photos develop ${when} on the TV.`
+          : `Every shot is a surprise. Photos develop ${when} on the TV.`;
+      }
     }
     if (!enabled && stream) close();
   }
@@ -315,6 +329,8 @@ const Camera = (() => {
       if (!cam) return;
       enabled = !!cam.enabled;
       serverShotsLeft = cam.shots_left;
+      if (typeof cam.develop_at === 'number') developAt = cam.develop_at;
+      developed = !!cam.developed;
       document.querySelector('.camera-viewfinder').classList.toggle('filtered', !!cam.viewfinder_filter);
       render();
       if (pendingCount > 0 && !draining && !retryTimer) drain();

@@ -12,13 +12,25 @@ Settings come from .env, re-read every poll so edits apply without a restart:
     PARTY_ALERTS_MENTION        Prefix for critical alerts (default @everyone; "" for none).
     PARTY_ALERTS_HEARTBEAT_URL  Optional healthchecks.io ping URL, hit every poll, so
                                 someone hears about it if this Mac goes silent.
+    PARTY_ALERTS_MODE           live (default) or test. Test sends only new critical
+                                problems, with no mention and no reminders, and a
+                                recovery note only for ones that lasted 5+ minutes.
+                                The log still gets everything.
+    PARTY_TUNNEL_AUTORESTART    1 (default) or 0. See below.
 
 Mute alerts while working on the code with `touch logs/watchdog.mute`; delete
-the file to unmute. Read-only: it never restarts or changes anything.
+the file to unmute.
+
+It changes one thing only: a tunnel that has stayed down for TUNNEL_STUCK_SECONDS
+while the internet itself is reachable gets restarted, at most once every
+TUNNEL_RESTART_COOLDOWN. On 2026-10-22 cloudflared stopped retrying after a
+Wi-Fi blip and guests got 530s for 1h45m until someone kickstarted it. Blips
+shorter than that, or with the internet down too, are left alone.
 """
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -39,6 +51,10 @@ POLL_SECONDS = 15
 PUBLIC_EVERY = 60          # the tunnel check goes out over the internet; less often
 REMIND_SECONDS = 15 * 60   # repeat a still-open critical alert this often
 EVENT_COOLDOWN = 10 * 60   # at most one alert per event kind this often
+TEST_RECOVERY_MIN = 5 * 60 # test mode: skip "back to normal" for shorter problems
+TUNNEL_STUCK_SECONDS = 3 * 60      # public down this long, internet up: restart the tunnel
+TUNNEL_RESTART_COOLDOWN = 10 * 60  # and not again for this long
+TUNNEL_LABEL = 'com.partyjukebox.tunnel'
 
 AGENTS = {
     'com.partyjukebox.app': 'Jukebox',
@@ -217,6 +233,12 @@ def check(snap):
             problems.append(Problem('lights:fps', WARNING,
                                     f"Lights are stuttering: {dmx['fps']:.0f} of "
                                     f"{target:.0f} fps.", grace=60))
+        link = dmx.get('link') or {}
+        if link and not link.get('connected', True):
+            problems.append(Problem('lights:dmx_unplugged', CRITICAL,
+                                    "The DMX interface isn't answering, so the fixtures "
+                                    "are dark. Check the ENTTEC's USB cable; the lights "
+                                    "reconnect on their own once it's back.", grace=15))
         if 'null' in (dmx.get('driver') or ''):
             problems.append(Problem('lights:no_dmx', WARNING,
                                     'Lights are running without the DMX interface, so '
@@ -319,6 +341,57 @@ class LogTail:
         return found
 
 
+def internet_up(host='1.1.1.1', port=443, timeout=3):
+    """Whether the internet answers at all. An IP, so a DNS outage can't hang it."""
+    try:
+        socket.create_connection((host, port), timeout).close()
+        return True
+    except OSError:
+        return False
+
+
+def kickstart(label):
+    """Restart a launchd agent. True if launchctl accepted it."""
+    try:
+        return subprocess.run(['launchctl', 'kickstart', '-k', f'gui/{os.getuid()}/{label}'],
+                              capture_output=True, timeout=20).returncode == 0
+    except Exception:
+        return False
+
+
+class TunnelMedic:
+    """Restarts a tunnel that is stuck rather than waiting out a network blip.
+
+    `observe` takes each public check; it returns an event message when it
+    restarted the tunnel (or failed to), else None.
+    """
+
+    def __init__(self, probe=internet_up, restart=lambda: kickstart(TUNNEL_LABEL)):
+        self.probe, self.restart = probe, restart
+        self.down_since = None
+        self.last_restart = -TUNNEL_RESTART_COOLDOWN
+
+    def observe(self, public, now, enabled=True):
+        if public is None:          # not checked this poll
+            return None
+        if public[1]:
+            self.down_since = None
+            return None
+        if self.down_since is None:
+            self.down_since = now
+        if (not enabled or now - self.down_since < TUNNEL_STUCK_SECONDS
+                or now - self.last_restart < TUNNEL_RESTART_COOLDOWN):
+            return None
+        if not self.probe():
+            return None             # the internet is down too; a restart won't help
+        self.last_restart = now
+        down_min = (now - self.down_since) / 60
+        if self.restart():
+            return (f'Tunnel was down {down_min:.0f} min with the internet up; '
+                    'restarted it.')
+        return f'Tunnel down {down_min:.0f} min and the automatic restart failed.'
+
+
 # ── Deciding what to say ─────────────────────────────────────────────────────
 
 class Tracker:
@@ -330,21 +403,24 @@ class Tracker:
         self.first_seen = {}   # key -> time it appeared
         self.announced = {}    # key -> (Problem, time last announced)
         self.event_last = {}   # event key -> time last announced
+        self.lasted = {}       # key -> seconds, for problems resolved by the last update
 
     def update(self, problems, now):
         current = {p.key: p for p in problems}
         new, reminders, resolved = [], [], []
+
+        self.lasted = {}
+        for key, (p, _) in list(self.announced.items()):
+            if key not in current:
+                resolved.append(p)
+                self.lasted[key] = now - self.first_seen.get(key, now)
+                del self.announced[key]
 
         for key in list(self.first_seen):
             if key not in current:
                 del self.first_seen[key]
         for key, p in current.items():
             self.first_seen.setdefault(key, now)
-
-        for key, (p, _) in list(self.announced.items()):
-            if key not in current:
-                resolved.append(p)
-                del self.announced[key]
 
         for key, p in current.items():
             if key in self.announced:
@@ -367,6 +443,15 @@ class Tracker:
                 self.event_last[key] = now
                 out.append(message)
         return out
+
+
+def for_testing(new, resolved, lasted):
+    """Test mode's cut: (new, reminders, resolved, events) with only new critical
+    problems, and recoveries of critical ones that lasted TEST_RECOVERY_MIN."""
+    new = [p for p in new if p.severity == CRITICAL]
+    resolved = [p for p in resolved if p.severity == CRITICAL
+                and lasted.get(p.key, 0) >= TEST_RECOVERY_MIN]
+    return new, [], resolved, []
 
 
 def compose(new, reminders, resolved, events, mention):
@@ -445,11 +530,14 @@ def run(once=False):
     unsent = []      # messages Discord didn't take yet, retried next poll
     last_public = 0
     started = False
+    medic = TunnelMedic()
 
     while True:
         now = time.time()
         env = load_env()
-        want_public = once or now - last_public >= PUBLIC_EVERY
+        # Every poll while guests can't get in, so a stuck tunnel is caught sooner.
+        public_down = medic.down_since is not None
+        want_public = once or public_down or now - last_public >= PUBLIC_EVERY
         if want_public:
             last_public = now
         snap = gather(env, want_public)
@@ -461,6 +549,12 @@ def run(once=False):
         for name, tail in tails.items():
             for exc in tail.new_tracebacks():
                 events.append((f'traceback:{name}', f'Crash in logs/{name}: {exc}'))
+        if not once:
+            autorestart = env.get('PARTY_TUNNEL_AUTORESTART', '1').strip() != '0'
+            healed = medic.observe(snap['public'], now, enabled=autorestart)
+            if healed:
+                log(healed)
+                events.append(('tunnel:autorestart', healed))
 
         if once:
             for p in problems:
@@ -469,20 +563,28 @@ def run(once=False):
             return
 
         new, reminders, resolved = tracker.update(problems, now)
-        message = compose(new, reminders, resolved, tracker.events(events, now),
-                          env.get('PARTY_ALERTS_MENTION', '@everyone'))
+        events = tracker.events(events, now)
+        mention = env.get('PARTY_ALERTS_MENTION', '@everyone')
+        message = compose(new, reminders, resolved, events, mention)
+        testing = env.get('PARTY_ALERTS_MODE', '').strip().lower() == 'test'
+        outgoing = (compose(*for_testing(new, resolved, tracker.lasted), '')
+                    if testing else message)
         if not started:
             started = True
             names = ', '.join(AGENTS[label] for label, info in snap['agents'].items()
                               if info['installed'])
             hello = f'👀 Watchdog started, watching: {names or "nothing installed"}.'
+            if testing:
+                hello += ' Test mode: critical alerts only, no mentions.'
             message = hello + ('\n' + message if message else '')
+            outgoing = hello + ('\n' + outgoing if outgoing else '')
 
         webhook = env.get('PARTY_ALERTS_WEBHOOK', '').strip()
         if message:
-            log('ALERT ' + message.replace('\n', ' | '))
-            if webhook and not os.path.exists(MUTE_FILE):
-                unsent.append(message)
+            log('ALERT ' + ('(not sent, test mode) ' if not outgoing else '')
+                + message.replace('\n', ' | '))
+        if outgoing and webhook and not os.path.exists(MUTE_FILE):
+            unsent.append(outgoing)
         while unsent and webhook and post_discord(webhook, unsent[0]):
             unsent.pop(0)
         del unsent[:-20]  # don't hoard if Discord is down for hours

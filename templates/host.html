@@ -44,6 +44,7 @@
     <div style="display:flex;gap:10px;align-items:center">
       <span style="color:var(--text-dim);font-size:0.78rem">Spotify: <span id="spotify-status">checking...</span></span>
       <a id="spotify-connect-btn" href="/auth/spotify" class="btn btn-primary btn-sm hidden">CONNECT SPOTIFY</a>
+      <a href="/host/m" class="btn btn-ghost btn-sm">PHONE VIEW</a>
       <button onclick="fetch('/api/host/logout',{method:'POST'}).then(()=>location.reload())" class="btn btn-ghost btn-sm">LOGOUT</button>
     </div>
   </div>
@@ -98,6 +99,11 @@
           <button id="copy-invite-btn" class="btn btn-cyan btn-sm" type="button">COPY INVITE LINK</button>
           <a id="tv-link" class="btn btn-sm" href="/tv" target="_blank" rel="noopener">OPEN TV SCREEN</a>
         </div>
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:8px">
+          <button id="setlist-btn" class="btn btn-primary btn-sm" type="button">SAVE SETLIST TO SPOTIFY</button>
+          <a id="recap-link" class="btn btn-sm" href="/recap" target="_blank" rel="noopener">PARTY RECAP</a>
+        </div>
+        <div id="setlist-status" style="margin-top:6px;font-size:0.72rem;color:var(--text-dim)"></div>
         <p style="color:var(--text-dim);font-size:0.7rem;margin-top:8px">Starting a new party changes the code, so old links stop working.</p>
       </div>
 
@@ -123,6 +129,23 @@
         <input type="range" id="camera-shots-slider" min="1" max="100" value="24">
         <div id="camera-counts" style="margin-top:10px;font-size:0.78rem;color:var(--text-dim)">No photos yet tonight.</div>
         <a href="/host/photos" class="btn btn-cyan btn-sm mt-12" target="_blank" rel="noopener">REVIEW PHOTOS</a>
+
+        <label style="font-size:0.78rem;color:var(--text-dim);display:block;margin:16px 0 6px">
+          PHOTOS DEVELOP AT
+        </label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <input type="datetime-local" id="develop-at-input" class="input-field" style="max-width:220px">
+          <button id="develop-midnight-btn" class="btn btn-ghost btn-sm" type="button">MIDNIGHT</button>
+          <button id="develop-now-btn" class="btn btn-primary btn-sm" type="button">DEVELOP NOW</button>
+        </div>
+        <div id="develop-status" style="margin-top:8px;font-size:0.78rem;color:var(--text-dim)"></div>
+        <label class="toggle-label" style="margin:12px 0">
+          <input type="checkbox" id="wall-pending-toggle">
+          <span class="toggle-switch"></span>
+          Wall shows photos nobody has reviewed yet
+        </label>
+        <a id="wall-link" href="/wall" class="btn btn-sm" target="_blank" rel="noopener">OPEN PHOTO WALL</a>
+        <p style="color:var(--text-dim);font-size:0.7rem;margin-top:8px">Until then photos stay in the darkroom. At develop time the TV switches to the photo wall on its own and guests get a link to it. Rejected photos never show.</p>
       </div>
 
       <!-- Costume contest -->
@@ -269,6 +292,15 @@
               NEW HOST PASSWORD
             </label>
             <input id="new-password" type="password" class="input-field" placeholder="Leave blank to keep current" style="margin-bottom:0">
+          </div>
+
+          <!-- Photos password -->
+          <div>
+            <label style="font-size:0.78rem;color:var(--text-dim);display:block;margin-bottom:6px">
+              NEW PHOTOS PASSWORD
+            </label>
+            <input id="new-photos-password" type="password" class="input-field" placeholder="For guests who review photos" autocomplete="new-password" style="margin-bottom:0">
+            <div style="font-size:0.7rem;color:var(--text-muted);margin-top:4px">They log in at /host/photos and can only review tonight's photos. Changing it signs them out.</div>
           </div>
 
           <!-- Party URL -->

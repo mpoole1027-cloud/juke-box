@@ -1,0 +1,90 @@
+/* Photo wall: a darkroom countdown, then tonight's disposable-camera prints.
+   Deliberately one look whatever the UI theme: it's a darkroom. */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  background: #060303;
+  color: #f3e6d8;
+  font-family: Georgia, 'Times New Roman', serif;
+  overflow: hidden;
+  cursor: none;
+}
+.hidden { display: none !important; }
+
+/* ── Darkroom ─────────────────────────────────────────────── */
+.wall-darkroom, .wall-locked, .wall-reveal {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  text-align: center;
+}
+.wall-darkroom { background: radial-gradient(ellipse at 50% 20%, #3a0606 0%, #120202 55%, #050101 100%); }
+.wall-safelight {
+  position: absolute; top: 6vh; left: 50%; width: 9vh; height: 9vh;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: #ff2a12;
+  box-shadow: 0 0 6vh 3vh rgba(255, 30, 10, 0.45), 0 0 30vh 12vh rgba(255, 20, 0, 0.12);
+  animation: safelight 4s ease-in-out infinite;
+}
+@keyframes safelight { 50% { opacity: 0.75; } }
+.wall-darkroom-body { position: relative; color: #ff9c86; }
+.wall-kicker { letter-spacing: 0.5em; font-size: 1.6vh; opacity: 0.7; margin-bottom: 3vh; }
+.wall-title { font-size: 9vh; font-weight: normal; font-style: italic; letter-spacing: 0.02em; }
+.wall-countdown {
+  font-family: 'Courier New', monospace; font-size: 14vh; letter-spacing: 0.08em;
+  color: #ff5a3c; text-shadow: 0 0 3vh rgba(255, 60, 30, 0.6); margin: 2vh 0;
+}
+.wall-sub { font-size: 2.6vh; opacity: 0.8; }
+.wall-tank { margin-top: 5vh; font-size: 2.4vh; opacity: 0.75; letter-spacing: 0.08em; }
+.wall-tank-icon { margin-right: 0.4em; }
+
+/* ── Reveal ───────────────────────────────────────────────── */
+.wall-reveal { background: #fff; animation: reveal-bg 3.2s ease-out forwards; }
+@keyframes reveal-bg { 0% { background: #fff; } 100% { background: #060303; } }
+.wall-reveal-text {
+  font-size: 8vh; font-style: italic; color: #1a0c06;
+  animation: reveal-text 3.2s ease-out forwards;
+}
+@keyframes reveal-text { 0% { color: #1a0c06; } 100% { color: #f3e6d8; } }
+
+/* ── Slideshow ────────────────────────────────────────────── */
+.wall-show { position: fixed; inset: 0 0 7vh 0; }
+.wall-slide {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity 1.2s ease;
+}
+.wall-slide.on { opacity: 1; }
+.wall-slide img {
+  max-width: 88vw; max-height: 78vh;
+  /* A print: white border, a little thicker at the bottom. */
+  border: 1.6vh solid #f7f3ea; border-bottom-width: 4vh;
+  box-shadow: 0 2vh 6vh rgba(0, 0, 0, 0.7);
+  transform: rotate(var(--tilt, 0deg)) scale(1);
+}
+.wall-slide.on img { animation: drift 8s ease-out forwards; }
+@keyframes drift {
+  from { transform: rotate(var(--tilt, 0deg)) scale(1); }
+  to   { transform: rotate(var(--tilt, 0deg)) scale(1.04); }
+}
+.wall-caption { margin-top: 2vh; font-size: 3vh; font-style: italic; opacity: 0.9; }
+.wall-empty {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2vh;
+}
+.wall-count {
+  position: fixed; top: 2vh; right: 3vw;
+  font-family: 'Courier New', monospace; font-size: 1.8vh; opacity: 0.5;
+}
+
+/* ── Now playing strip ────────────────────────────────────── */
+.wall-now {
+  position: fixed; left: 0; right: 0; bottom: 0; height: 7vh;
+  display: flex; align-items: center; gap: 1.4vw; padding: 0 3vw;
+  background: rgba(0, 0, 0, 0.55); border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 2.2vh; white-space: nowrap; overflow: hidden;
+}
+.wall-now img { height: 5vh; width: 5vh; object-fit: cover; border-radius: 3px; }
+.wall-now-label { letter-spacing: 0.3em; font-size: 1.4vh; opacity: 0.55; }
+.wall-now-artist { opacity: 0.6; }
+.wall-locked { flex-direction: column; gap: 2vh; }
